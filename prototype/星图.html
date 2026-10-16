@@ -1,0 +1,3118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>星图 · 交互原型（联网版）</title>
+<!-- KaTeX 公式排版：非阻塞加载。没有网络 / CDN 被墙时页面照常显示，公式自动退化成等宽文本 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" media="print" onload="this.media='all'">
+<style>
+  :root{
+    --bg:#070912; --ink:#e9edf6; --muted:#7f8aa3; --accent:#8aa4ff;
+    --line:rgba(255,255,255,.14);
+    --font:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--font);overflow:hidden;-webkit-font-smoothing:antialiased}
+
+  .nebula{position:fixed;inset:-20%;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(38% 30% at 22% 28%, rgba(88,110,255,.15), transparent 70%),
+      radial-gradient(34% 26% at 78% 72%, rgba(150,90,255,.12), transparent 70%),
+      radial-gradient(30% 24% at 55% 88%, rgba(60,200,255,.07), transparent 70%);
+}
+  .stars{position:fixed;inset:0;pointer-events:none;z-index:0}
+  /* 星星：绝大多数是静态的（只画一次），只有 .tw 那几颗在闪。
+     整个 .stars 是 fixed 铺满视口的一层，上面每多一个无限动画，就等于每帧重画一遍全屏。 */
+  .star{position:absolute;border-radius:50%;background:#fff;opacity:.5}
+  .star.tw{will-change:opacity;animation:twinkle 4s ease-in-out infinite}
+  @keyframes twinkle{0%,100%{opacity:.16}50%{opacity:.85}}
+
+  /* ===== 第一屏 ===== */
+  .screen-landing{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;transition:opacity .7s,transform .7s}
+  .screen-landing.gone{opacity:0;transform:scale(1.06);pointer-events:none}
+  .landing{width:min(660px,88vw);text-align:center}
+  .kicker{font-size:13px;letter-spacing:.36em;color:var(--muted);margin-bottom:26px;text-indent:.36em;animation:rise .9s .1s both}
+  .landing h1{font-size:clamp(30px,5.2vw,52px);font-weight:300;letter-spacing:.02em;margin:0 0 46px;line-height:1.28;animation:rise .9s .22s both}
+  .landing h1 em{font-style:normal;color:var(--accent)}
+  .ask{display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--line);padding:10px 4px;width:100%;transition:border-color .35s,box-shadow .35s;animation:rise .9s .34s both}
+  .ask:focus-within{border-color:var(--accent);box-shadow:0 14px 34px -22px var(--accent)}
+  .ask input{flex:1;background:none;border:0;outline:none;color:var(--ink);font-family:inherit;font-size:clamp(15px,1.6vw,18px);padding:10px 2px}
+  .ask input::placeholder{color:#5b6479}
+  .ask button{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font-size:17px;cursor:pointer;transition:.3s;flex:none}
+  .ask button:hover{background:var(--accent);color:#0b0d16;border-color:transparent;transform:translateX(2px)}
+  .hint{margin-top:16px;font-size:12px;color:#5b6479;letter-spacing:.06em;animation:rise .9s .44s both}
+  .chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:34px;animation:rise .9s .56s both}
+  .chips button{background:none;border:1px solid var(--line);color:var(--muted);font-family:inherit;font-size:12.5px;padding:7px 15px;border-radius:999px;cursor:pointer;transition:.28s}
+  .chips button:hover{color:var(--ink);border-color:rgba(138,164,255,.6);background:rgba(138,164,255,.08)}
+  @keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+
+  /* ===== 星图 ===== */
+  .screen-universe{position:fixed;inset:0;z-index:10;opacity:0;pointer-events:none;transition:opacity .8s;-webkit-user-select:none;user-select:none}
+  /* 星图层一律不可选中（拖拽时不会再刷出蓝色高亮）；讲义正文与输入框除外 */
+  .pbody, .pbody *{-webkit-user-select:text;user-select:text}
+  .screen-universe input{-webkit-user-select:text;user-select:text}
+  .screen-universe.on{opacity:1;pointer-events:auto}
+
+  .topbar{position:absolute;top:0;left:0;right:0;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;z-index:30;pointer-events:none}
+  .topbar > *{pointer-events:auto}
+  .brandwrap{position:relative}
+  .brand{display:flex;align-items:center;gap:9px;font-size:13px;letter-spacing:.16em;color:var(--ink);background:rgba(7,9,18,.94);border:1px solid rgba(255,255,255,.08);font-family:inherit;cursor:pointer;padding:8px 14px;border-radius:999px;transition:.25s;box-shadow:0 14px 40px -20px #000}
+  .brand:hover{background:rgba(20,26,42,.96)}
+  .brand .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+  .brand .caret{font-size:9px;color:var(--muted);margin-left:2px}
+  .menu{position:absolute;top:46px;left:0;min-width:290px;background:rgba(14,17,28,.94);border:1px solid var(--line);border-radius:14px;padding:8px;backdrop-filter:blur(14px);box-shadow:0 24px 60px -20px #000;opacity:0;transform:translateY(-8px);pointer-events:none;transition:.25s}
+  .menu.open{opacity:1;transform:none;pointer-events:auto}
+  .menu .cap{font-size:10.5px;letter-spacing:.2em;color:#5b6479;padding:8px 10px 6px}
+  .menu button.item{width:100%;display:flex;justify-content:space-between;align-items:center;gap:16px;background:none;border:0;color:var(--ink);font-family:inherit;font-size:13.5px;padding:10px;border-radius:9px;cursor:pointer;text-align:left;transition:.2s}
+  .menu button.item:hover{background:rgba(138,164,255,.13)}
+  .menu button.item .meta{font-size:11px;color:var(--muted);white-space:nowrap}
+  .menu .sep{height:1px;background:var(--line);margin:7px 4px}
+  .cdot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:9px;vertical-align:middle}
+
+  /* ===== 左上：首页 + 下拉 + 搜索（兼提问入口）===== */
+  .tleft{position:relative;z-index:2;display:flex;align-items:center;gap:8px}
+  .brand.sq{padding:7px 11px}
+  .brand.sq .caret{margin:0;font-size:10px}
+  .searchwrap{position:relative;width:210px;transition:width .28s cubic-bezier(.2,.8,.25,1)}
+  .searchwrap:focus-within{width:360px}
+  .sinput{width:100%;background:rgba(7,9,18,.94);border:1px solid rgba(255,255,255,.08);color:var(--ink);font-family:inherit;font-size:12.5px;padding:8px 13px;border-radius:999px;outline:none;transition:border-color .25s,box-shadow .25s;box-shadow:0 14px 40px -20px #000}
+  .sinput::placeholder{color:#5b6479}
+  .sinput:focus{border-color:rgba(138,164,255,.55);box-shadow:0 0 0 3px rgba(138,164,255,.10)}
+  .sres{position:absolute;top:42px;left:0;width:360px;max-height:62vh;overflow:auto;background:rgba(14,17,28,.97);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 24px 60px -20px #000;opacity:0;transform:translateY(-6px);pointer-events:none;transition:.22s}
+  .sres.open{opacity:1;transform:none;pointer-events:auto}
+  .sres .hint{font-size:10.5px;letter-spacing:.14em;color:#5b6479;padding:8px 10px 5px}
+  .sres .row{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;cursor:pointer;font-size:13px;color:var(--ink);transition:.15s}
+  .sres .row.active{background:rgba(138,164,255,.15)}
+  .sres .row .lb{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sres .row .sub{font-size:11px;color:#6d7893;white-space:nowrap;flex:none}
+  .sres .row .bdg{flex:none;font-size:9.5px;letter-spacing:.08em;color:#8fa0c8;border:1px solid rgba(143,160,200,.35);border-radius:5px;padding:1px 5px}
+  .sres .row .bdg.q{color:#c9a6ff;border-color:rgba(201,166,255,.4)}
+  .sres .row.askrow .lb{color:#dce6ff}
+
+  .controls{position:absolute;left:50%;top:13px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;background:rgba(7,9,18,.96);border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:5px;box-shadow:0 18px 46px -20px #000}
+  .controls button{background:none;border:0;color:var(--muted);font-family:inherit;font-size:12px;padding:7px 13px;border-radius:999px;cursor:pointer;transition:.22s;white-space:nowrap}
+  .controls button:hover{background:rgba(255,255,255,.14);color:var(--ink)}
+  .controls button.active{background:rgba(196,150,255,.18);color:#dcc8ff}
+
+  .viewport{position:absolute;inset:0;overflow:hidden;cursor:grab;z-index:10}
+  .viewport.dragging{cursor:grabbing}
+  .world{position:absolute;left:0;top:0;width:0;height:0;transform-origin:0 0;will-change:transform}
+  .links{position:absolute;left:0;top:0;overflow:visible}
+  .links line{stroke-width:1;vector-effect:non-scaling-stroke;stroke:rgba(150,175,255,.35);transition:stroke .4s}
+  .links line.hot{stroke:rgba(200,220,255,.95)}
+  /* 星际航线：默认隐藏，只有需要时才浮现 */
+  .links line.cross{stroke:rgba(196,150,255,.7);stroke-dasharray:3 8;stroke-width:1.2;opacity:0;transition:opacity .55s}
+  body.lanes-on .links line.cross{opacity:1}
+  .links line.cross.hot{stroke:rgba(232,200,255,1)}
+
+  .node{position:absolute;transform:translate(-50%,-50%) scale(.4);opacity:0;padding:9px 16px;border-radius:999px;font-size:13.5px;white-space:nowrap;cursor:grab;transition:opacity .5s,transform .5s cubic-bezier(.2,.85,.3,1.25),background .3s,border-color .3s,box-shadow .22s;transform-origin:50% 50%}
+  .node:active{cursor:grabbing}
+  /* 问题节点：圆角矩形，和胶囊状的概念明显不同 */
+  .node.q{border-radius:13px;padding:11px 19px;font-size:14px;font-weight:600;box-shadow:0 0 34px -10px rgba(138,164,255,.6)}
+  .node .qmk{color:var(--accent);margin-right:8px;font-size:11px;opacity:.95}
+  .node .mk{color:#c9a6ff;margin-left:8px;font-size:10px}
+  .node .rel{font-size:10px;letter-spacing:.06em;opacity:.65;margin-left:7px}
+  .node.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  .node.visited{background:rgba(138,164,255,.9);color:#0a0c15;border-color:transparent;font-weight:600;box-shadow:0 0 26px rgba(138,164,255,.45)}
+  body.lanes-on .node.shared{border-style:dashed}
+  .node.pulse:after{content:"";position:absolute;inset:-6px;border-radius:inherit;border:1px solid var(--accent);animation:pulse 1.1s ease-out 2}
+  .node.show.dim{opacity:0;transform:translate(-50%,-50%) scale(.62);pointer-events:none}
+  .node.picked{outline:2px solid rgba(201,166,255,.95);outline-offset:3px;box-shadow:0 0 34px -6px #c9a6ff}
+  /* ===== 三档层级：0 恒星（实心 + 柔光）/ 1 行星（半透明亮边）/ ≥2 卫星（近乎透明细边）=====
+     每档只给同一组变量乘系数；配色一律走 CSS，不再写内联样式，这样 .visited / .picked 才会重新生效。
+     选择器里显式列出 .t1/.root，是为了让层级色的特异性 ≥(0,2,0)，能压过上面的 .node.visited。 */
+  .node{--f-s:.72;--f-l:.95;--f-a:.86;--f-bd:1;--f-tx:.9;--nd-pad:9px 16px;--nd-fs:13.5px}
+  .node.t1{--f-s:.94;--f-l:1.06;--f-a:1.35;--f-bd:1.45;--f-tx:1;--nd-pad:11px 18px;--nd-fs:14.5px}
+  .node.root{--f-s:1.12;--f-l:1.14;--f-a:2;--f-bd:2.05;--f-tx:1;--nd-pad:13px 21px;--nd-fs:16px;z-index:3;letter-spacing:.01em}
+  .node,.node.q,.node.t1,.node.t1.q,.node.root,.node.root.q{
+    padding:var(--nd-pad);font-size:var(--nd-fs);
+    background:hsl(var(--h,222) calc(70% * var(--f-s)) calc(60% * var(--f-l)) / calc(.10 * var(--f-a)));
+    border:1px solid hsl(var(--h,222) calc(70% * var(--f-s)) calc(72% * var(--f-l)) / calc(.42 * var(--f-bd)));
+    color:hsl(var(--h,222) calc(60% * var(--f-tx)) calc(88% * var(--f-tx)))
+  }
+  /* 恒星：文字拉到最亮，外面罩一团柔和外发光（静态 box-shadow + 可合成的 ::before 呼吸，不用 filter:blur） */
+  .node.root,.node.root.q{
+    color:#fff;
+    box-shadow:0 0 44px -14px hsl(var(--h,222) 78% 68% / .62),0 0 112px -34px hsl(var(--h,222) 78% 68% / .40)
+  }
+  .node.root.picked{box-shadow:0 0 34px -6px #c9a6ff,0 0 48px -16px hsl(var(--h,222) 78% 68% / .55)}
+  .node.root::before{content:"";position:absolute;left:50%;top:50%;width:320px;height:320px;margin:-160px 0 0 -160px;border-radius:50%;pointer-events:none;z-index:-1;background:radial-gradient(circle,hsl(var(--h,222) 82% 72% / .30) 0%,hsl(var(--h,222) 82% 72% / .11) 36%,transparent 68%);will-change:opacity;animation:rootGlow 8s ease-in-out infinite}
+  @keyframes rootGlow{0%,100%{opacity:.62}50%{opacity:1}}
+  body.far .node.root::before{display:none}   /* 缩得很远时这团光只有几像素大，没必要留着动画 */
+  .node.root .qmk{font-size:13px;color:hsl(var(--h,222) 92% 82%)}
+  /* 读过的节点：二级以下照旧变实心蓝；根 / 一级不涂蓝（否则看不出层级色），只在右上角点一颗小圆点 */
+  .node.visited:not(.root):not(.t1){background:rgba(138,164,255,.9);color:#0a0c15;border-color:transparent}
+  .node.visited.root::after,.node.visited.t1::after{content:"";position:absolute;right:-6px;top:-6px;width:9px;height:9px;border-radius:50%;background:rgba(138,164,255,1);box-shadow:0 0 10px rgba(138,164,255,.8);pointer-events:none}
+  /* 合并后的「桥」：两颗恒星之间的关系本身也是一个节点 —— 稍宽、稍亮，带 ⇄ 记号 */
+  .node.bridge{--f-s:1.02;--f-l:1.18;--f-a:1.55;--f-bd:1.9;letter-spacing:.02em}
+  /* 事实节点：去饱和 = 「这是一个标记，不是一个值得深挖的概念」 */
+  .node.fact{--f-s:.30;--f-l:1.04;--f-a:1.9;--f-bd:1.3;--f-tx:.94;letter-spacing:0}
+  .node.fact,.node.fact.q{color:hsl(var(--h,222) 24% 90%)}
+  .node.fact .fmk{font-size:11px;margin-right:5px;color:hsl(var(--h,222) 34% 88%)}
+  .badge.factb{background:rgba(176,208,255,.14);color:#cfe0ff;border-color:rgba(176,208,255,.3)}
+  .factbox{margin:2px 0 14px;padding:13px 16px;border-radius:12px;background:linear-gradient(180deg,rgba(176,208,255,.14),rgba(176,208,255,.05));border:1px solid rgba(176,208,255,.22)}
+  .factbox b{display:block;font-size:10.5px;letter-spacing:.18em;color:#8fa0c8;margin-bottom:6px;font-weight:400}
+  .factbox .fans{font-size:16.5px;line-height:1.55;color:#eef2fb}
+  .factbox .fnote{margin-top:9px;font-size:11.5px;color:#6d7893;line-height:1.6}
+  .upgrade{display:flex;align-items:center;gap:7px;width:100%;text-align:left;margin:14px 0 2px;padding:10px 15px;border-radius:11px;background:rgba(196,150,255,.13);border:1px solid rgba(196,150,255,.34);color:#dcc8ff;font-family:inherit;font-size:12.5px;cursor:pointer;transition:.2s}
+  .upgrade:hover{background:rgba(196,150,255,.22);border-color:rgba(196,150,255,.5)}
+  .upgrade .ar{margin-left:auto;opacity:.75}
+  .modes{display:flex;gap:6px;justify-content:center;margin:15px 0 2px}
+  .modebtn{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);color:#8d97ad;font-family:inherit;font-size:12.5px;padding:8px 15px;border-radius:999px;cursor:pointer;transition:.22s}
+  .modebtn:hover{color:#e9edf6}
+  .modebtn.active{background:rgba(196,150,255,.18);border-color:rgba(196,150,255,.45);color:#dcc8ff}
+  .modebtn.active[data-m="fact"]{background:rgba(176,208,255,.16);border-color:rgba(176,208,255,.45);color:#dbe7ff}
+  .node.bridge .bmk{font-size:13px;margin-right:6px;color:hsl(var(--h,222) 92% 84%)}
+  .links line.bridge{stroke:rgba(214,180,255,.66);stroke-width:1.7}
+  .links line.bridge.hot{stroke:rgba(242,224,255,1)}
+  .links line.cross.manual{stroke:rgba(140,215,255,.85)}
+  .links line.dim{opacity:0}
+  body.lanes-on .links line.cross.dim{opacity:0}
+  @keyframes pulse{from{transform:scale(.9);opacity:.9}to{transform:scale(1.5);opacity:0}}
+
+  .clabel{position:absolute;transform:translate(-50%,-50%);font-size:11px;letter-spacing:.4em;color:rgba(180,195,230,.5);white-space:nowrap;pointer-events:none}
+  body.far .clabel{color:rgba(200,215,245,.85);font-size:12px}
+  body.far .node{opacity:.35}
+  body.far .node.root{opacity:.95}
+  body.far .node.show.dim{opacity:0}
+  /* 正在滚轮缩放：先去掉模糊光晕和投影（重画最贵的部分），停手后再淡回来 */
+  body.zooming .node,body.zooming .node.q,body.zooming .node.visited,body.zooming .node.root{box-shadow:none !important}
+  body.zooming .node.root::before{display:none}
+  body.zooming .node{transition:box-shadow .22s}
+
+  /* ===== 面板 ===== */
+  .panel{position:absolute;top:0;right:0;bottom:0;width:min(460px,42vw);background:rgba(9,12,20,.985);border-left:1px solid var(--line);transform:translateX(102%);transition:transform .5s cubic-bezier(.2,.8,.25,1);z-index:25;display:flex;flex-direction:column}
+  .panel.open{transform:none;box-shadow:-40px 0 90px -40px #000}
+  .phead{display:flex;align-items:center;gap:8px;padding:16px 14px 10px;border-bottom:1px solid var(--line)}
+  .phead .crumb{flex:1;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ghost{background:none;border:1px solid transparent;color:var(--muted);font-family:inherit;font-size:14px;width:30px;height:30px;border-radius:8px;cursor:pointer;transition:.2s}
+  .ghost:hover{background:rgba(255,255,255,.08);color:var(--ink)}
+  .ghost.spin{animation:spin 1s linear infinite;color:var(--accent)}
+  .ghost#delBtn{font-size:13px}
+  .ghost#delBtn:hover{background:rgba(255,110,110,.14);border-color:rgba(255,110,110,.45);color:#ff9c9c}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .pbody{flex:1;overflow-y:auto;padding:26px 26px 60px}
+  .pbody::-webkit-scrollbar{width:8px}
+  .pbody::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:8px}
+  .badge{display:inline-block;font-size:10.5px;letter-spacing:.14em;color:var(--accent);border:1px solid rgba(138,164,255,.4);background:rgba(138,164,255,.08);padding:4px 10px;border-radius:999px;margin-bottom:16px}
+  .badge.qb{color:#dcc8ff;border-color:rgba(196,150,255,.45);background:rgba(196,150,255,.08)}
+  .pbody h2{font-size:26px;font-weight:400;margin:0 0 12px}
+  .pbody .summary{color:#aab4c9;font-size:14px;line-height:1.85;margin:0 0 24px;padding-left:14px;border-left:2px solid rgba(138,164,255,.5)}
+  .lecture p{font-size:14.5px;line-height:2.05;color:#c9d2e3;margin:0 0 18px}
+  .rv{opacity:0;transform:translateY(7px);transition:opacity .5s,transform .5s}
+  .rv.on{opacity:1;transform:none}
+  .insight{background:rgba(138,164,255,.09);border:1px solid rgba(138,164,255,.26);border-left:3px solid var(--accent);border-radius:10px;padding:14px 16px;margin:0 0 26px;font-size:15px;line-height:1.9;color:#dce5fb}
+  .insight b{display:block;font-size:10.5px;letter-spacing:.22em;color:var(--accent);font-weight:400;margin-bottom:8px}
+  .insight .isk{display:block;font-size:13.5px;color:#828fa8;margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed rgba(255,255,255,.1)}
+  .sec{margin:0 0 24px}
+  .sech{font-size:10.5px;letter-spacing:.22em;color:#5b6479;margin:0 0 12px}
+  .lstset{list-style:none;margin:0;padding:0}
+  .lstset li{padding:9px 0;border-bottom:1px dashed rgba(255,255,255,.09);font-size:14.5px;line-height:1.6}
+  .lstset li:last-child{border-bottom:0}
+  .lstset b{font-weight:500;color:#e4e9f5}
+  .lstwhy{display:block;font-size:13px;color:#828fa8;margin-top:3px}
+  .fbox{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:12px;padding:18px;margin:0 0 24px}
+  .fbox .tex{font-size:19px;text-align:center;color:#e8eeff;padding:8px 0 14px;overflow-x:auto}
+  .fbox .fread{font-size:12.5px;color:#9fb0cd;line-height:1.8;margin-bottom:12px;text-align:center}
+  .fbox .fsym{font-size:12.5px;color:#8f9bb5;line-height:1.95;display:flex;gap:10px}
+  .fbox .fsym b{color:#bcd0ff;font-weight:500;min-width:58px;flex:none}
+  .fbox .fex{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-size:12.5px;color:#9fb0cd;line-height:1.85}
+  .drills button.asks{flex-direction:column;align-items:flex-start;gap:3px;padding:9px 14px}
+  .askq{font-size:13px;color:#dfe7fb}
+  .askc{font-size:10.5px;color:#7f8aa3;letter-spacing:.04em}
+  .fromline{font-size:12.5px;color:#8f9bb5;line-height:1.85;margin:-6px 0 20px;padding-left:14px;border-left:2px solid rgba(196,150,255,.45)}
+  .term{color:#bcd0ff;border-bottom:1px dashed rgba(138,164,255,.6);cursor:pointer;transition:.2s;padding-bottom:1px}
+  .term:hover{color:#fff;background:rgba(138,164,255,.16);border-bottom-color:transparent;border-radius:3px}
+  .kickerline{margin:34px 0 12px;font-size:11px;letter-spacing:.22em;color:#5b6479}
+  .drills{display:flex;flex-wrap:wrap;gap:8px}
+  .drills button{background:rgba(138,164,255,.07);border:1px solid rgba(138,164,255,.28);color:#c3d0f0;font-family:inherit;font-size:12.5px;padding:8px 14px;border-radius:999px;cursor:pointer;transition:.25s}
+  .drills button:hover{background:rgba(138,164,255,.2);color:#fff}
+  .drills button.lane{background:rgba(196,150,255,.09);border-color:rgba(196,150,255,.4);color:#dcc8ff}
+  .drills button.lane:hover{background:rgba(196,150,255,.22)}
+  .lanenote{font-size:12.5px;color:#9b8bbd;line-height:1.85;margin:0 0 12px}
+
+  .pfoot{flex:none;border-top:1px solid var(--line);padding:12px 16px 14px;background:rgba(8,11,18,.55)}
+  .askline{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding:2px 2px 6px}
+  .askline input{flex:1;background:none;border:0;outline:none;color:var(--ink);font-family:inherit;font-size:13.5px;padding:6px 0}
+  .askline input::placeholder{color:#5b6479}
+  .askline button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);cursor:pointer;font-size:14px;transition:.25s;flex:none}
+  .askline button:hover{background:var(--accent);color:#0b0d16;border-color:transparent}
+  .followhint{margin-top:8px;font-size:11px;color:#5b6479;letter-spacing:.04em}
+
+  /* ===== 设置弹窗 ===== */
+  /* 这里原本常驻一条全屏 backdrop-filter:blur(6px)：即使 opacity:0 没显示，合成器仍然每帧
+     要把它背后的整屏内容抓下来再模糊一次。改成只在 .on 时才挂上，关着的时候彻底不参与。 */
+  .cfgmodal{position:fixed;inset:0;z-index:70;background:rgba(4,6,12,.72);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;visibility:hidden;transition:opacity .3s,visibility .3s}
+  .cfgmodal.on{opacity:1;pointer-events:auto;visibility:visible;backdrop-filter:blur(6px)}
+  .cfgcard{width:min(520px,90vw);max-height:88vh;overflow-y:auto;background:rgba(16,20,32,.98);border:1px solid var(--line);border-radius:18px;padding:26px 26px 22px;box-shadow:0 40px 100px -40px #000}
+  .cfgh{font-size:16px;margin-bottom:6px}
+  .cfgsub{font-size:12px;color:#7f8aa3;margin-bottom:20px;line-height:1.75}
+  .cfgl{display:block;margin-bottom:14px}
+  .cfgl span{display:block;font-size:11px;letter-spacing:.18em;color:#5b6479;margin-bottom:7px}
+  .cfgl input{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:10px;padding:11px 13px;color:var(--ink);font-family:inherit;font-size:13.5px;outline:none;transition:.25s}
+  .cfgl input:focus{border-color:var(--accent)}
+  .cfgprov{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 18px}
+  .cfgprov button{background:none;border:1px solid var(--line);color:var(--muted);font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;cursor:pointer;transition:.22s}
+  .cfgprov button:hover{color:var(--ink);border-color:rgba(138,164,255,.6);background:rgba(138,164,255,.1)}
+  .cfgmsg{font-size:12.5px;color:#9fb0cd;min-height:18px;margin-bottom:12px;line-height:1.7}
+  .cfgmsg.err{color:#d99}
+  .cfgmsg.ok{color:#8fd6a8}
+  .cfgacts{display:flex;gap:10px;flex-wrap:wrap}
+  .cfgacts button{font-family:inherit;font-size:13px;padding:10px 18px;border-radius:999px;cursor:pointer;border:1px solid var(--line);background:none;color:var(--muted);transition:.25s}
+  .cfgacts button.primary{background:rgba(138,164,255,.2);border-color:rgba(138,164,255,.5);color:#dbe4fb}
+  .cfgacts button:hover{color:#fff;border-color:rgba(138,164,255,.7)}
+  .cfgnote{margin-top:16px;font-size:11.5px;color:#5b6479;line-height:1.8}
+
+  /* ===== 关于 / 合规说明 ===== */
+  .aboutcard{width:min(660px,92vw)}
+  .absec{margin-bottom:20px}
+  .absec h4{margin:0 0 7px;font-size:13px;color:#dbe4fb;display:flex;align-items:center;gap:8px}
+  .absec h4 .abi{font-size:13px;opacity:.8}
+  .absec p{margin:0 0 9px;font-size:12.5px;line-height:1.85;color:#9aa6bd}
+  .absec p:last-child{margin-bottom:0}
+  .absec b{color:#cbd6ea;font-weight:600}
+  .absec code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:#b9c7e4}
+  .absec .warn{color:#e0b0b0}
+  .absec ul{margin:0 0 9px;padding-left:18px}
+  .absec li{font-size:12.5px;line-height:1.85;color:#9aa6bd;margin-bottom:5px}
+  .landfoot{margin-top:26px;display:flex;align-items:center;gap:11px;flex-wrap:wrap;justify-content:center;font-size:11.5px;color:#5b6479;line-height:1.7}
+  .landfoot .lfbtn{background:none;border:1px solid var(--line);color:#7f8aa3;font-family:inherit;font-size:11.5px;padding:5px 12px;border-radius:999px;cursor:pointer;transition:.22s}
+  .landfoot .lfbtn:hover{color:#cfd8ea;border-color:rgba(138,164,255,.55);background:rgba(138,164,255,.1)}
+
+  /* ===== 生成自检（默认折叠，只在需要时展开） ===== */
+  .selfcheck{margin:26px 0 0;border-top:1px solid var(--line);padding-top:14px;font-size:12px;color:#8b7f9c;line-height:1.85}
+  .selfcheck summary{cursor:pointer;color:#7d7196;font-size:11.5px;letter-spacing:.06em;outline:none;list-style:none}
+  .selfcheck summary::-webkit-details-marker{display:none}
+  .selfcheck summary:before{content:"⚠ ";opacity:.7}
+  .selfcheck p{margin:10px 0 0;color:#a294b8}
+
+  /* ===== 面板 tab ===== */
+  .ptabs{display:flex;gap:6px;padding:10px 14px 0}
+  .ptabs button{flex:1;background:none;border:1px solid transparent;border-bottom:1px solid var(--line);color:#7f8aa3;font-family:inherit;font-size:12.5px;padding:9px 6px;border-radius:8px 8px 0 0;cursor:pointer;transition:.22s}
+  .ptabs button:hover{color:var(--ink);background:rgba(255,255,255,.05)}
+  .ptabs button.on{color:var(--ink);background:rgba(138,164,255,.14);border-color:rgba(138,164,255,.3);border-bottom-color:transparent}
+
+  /* ===== 闪卡 ===== */
+  .fc{padding:22px 0 0}
+  .fc-card{perspective:1100px;cursor:pointer;height:min(420px,52vh)}
+  .fc-inner{position:relative;width:100%;height:100%;transform-style:preserve-3d;transition:transform .6s cubic-bezier(.2,.8,.25,1)}
+  .fc-card.flipped .fc-inner{transform:rotateY(180deg)}
+  .fc-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;display:flex;flex-direction:column;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.035);padding:26px 22px;overflow-y:auto}
+  .fc-back{transform:rotateY(180deg);background:rgba(138,164,255,.09);border-color:rgba(138,164,255,.3)}
+  .fc-tag{font-size:10.5px;letter-spacing:.22em;color:#5b6479;margin-bottom:16px;flex:none}
+  .fc-text{font-size:15px;line-height:1.95;color:#dbe3f3}
+  .fc-front .fc-text{font-size:19px;line-height:1.7}
+  .fc-hint{position:absolute;left:22px;right:22px;bottom:16px;font-size:11px;color:#5b6479;text-align:center}
+  .fc-text .tex{font-size:18px;text-align:center;padding:10px 0 14px}
+  .fc-read{font-size:12.5px;color:#9fb0cd;text-align:center;margin-bottom:12px}
+  .fc-sym{font-size:12.5px;color:#8f9bb5;line-height:1.9;display:flex;gap:10px}
+  .fc-sym b{color:#bcd0ff;font-weight:500;min-width:58px;flex:none}
+  .fc-bar{display:flex;align-items:center;justify-content:space-between;margin-top:18px}
+  .fc-bar button{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:14px;width:46px;height:38px;border-radius:10px;cursor:pointer;transition:.22s}
+  .fc-bar button:hover{background:rgba(138,164,255,.18);border-color:rgba(138,164,255,.4)}
+  .fc-bar span{font-size:12.5px;color:#7f8aa3;letter-spacing:.08em}
+
+  /* ===== 小地图 ===== */
+  .minimap{position:absolute;left:22px;bottom:22px;width:184px;height:124px;border:1px solid var(--line);border-radius:12px;background:rgba(10,13,22,.92);z-index:26;overflow:hidden;cursor:crosshair}
+  .mm-dot{position:absolute;border-radius:50%;transform:translate(-50%,-50%)}
+  .mm-view{position:absolute;border:1px solid rgba(180,200,255,.7);border-radius:3px;background:rgba(180,200,255,.07)}
+  .mm-tip{position:absolute;left:9px;top:7px;font-size:9.5px;letter-spacing:.16em;color:#5b6479;pointer-events:none}
+
+  /* ===== 合并建议 ===== */
+  .askmerge{position:fixed;left:50%;bottom:9%;transform:translate(-50%,12px);width:min(520px,86vw);background:rgba(16,20,32,.98);border:1px solid rgba(196,150,255,.35);border-radius:16px;padding:20px 22px;backdrop-filter:blur(16px);box-shadow:0 30px 80px -30px #000;opacity:0;pointer-events:none;transition:.4s;z-index:60}
+  .askmerge.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+  .askmerge .mt{font-size:11px;letter-spacing:.2em;color:#9b8bbd;margin-bottom:10px}
+  .askmerge .mq{font-size:17px;color:#e4e9f5;margin-bottom:18px}
+  .askmerge .ma{display:flex;gap:10px;flex-wrap:wrap}
+  .askmerge .ma button{font-family:inherit;font-size:12.5px;padding:9px 16px;border-radius:999px;cursor:pointer;transition:.25s;border:1px solid var(--line);background:none;color:var(--muted)}
+  .askmerge .ma button.primary{background:rgba(196,150,255,.18);border-color:rgba(196,150,255,.5);color:#e6d6ff}
+  .askmerge .ma button:hover{color:#fff;border-color:rgba(138,164,255,.7)}
+  .aliasline{font-size:12.5px;color:#8f9bb5;line-height:1.9;margin:-10px 0 24px;padding-left:14px}
+
+  /* ===== 提示条 ===== */
+  .toast{position:absolute;left:50%;top:84px;transform:translate(-50%,-12px);background:rgba(20,24,38,.95);border:1px solid var(--line);color:#cfd8ea;font-size:12.5px;padding:10px 20px;border-radius:999px;opacity:0;pointer-events:none;transition:.4s;z-index:40;white-space:nowrap}
+  .toast.on{opacity:1;transform:translate(-50%,0)}
+  .toast.act{pointer-events:auto;display:flex;align-items:center;gap:12px}
+  .toast .tact{background:rgba(196,150,255,.2);border:1px solid rgba(196,150,255,.5);color:#e6d6ff;font-family:inherit;font-size:12px;padding:4px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
+  .toast .tact:hover{background:rgba(196,150,255,.36)}
+  #diag{position:fixed;right:10px;bottom:10px;z-index:9999;font:12px/1.7 ui-monospace,Consolas,monospace;color:#a9bfe2;background:rgba(6,9,18,.9);border:1px solid #26314a;border-radius:10px;padding:8px 11px;max-width:52ch;white-space:pre-wrap;cursor:pointer;pointer-events:auto}
+  #diag:empty{display:none}
+</style>
+</head>
+<body>
+  <div class="nebula"></div>
+  <div class="stars" id="stars"></div>
+
+  <section class="screen-landing" id="landing">
+    <div class="landing">
+      <div class="kicker">为好奇心点一盏灯</div>
+      <h1 id="landH1">今天，想<em>搞懂</em>什么？</h1>
+      <div class="ask">
+        <input id="q" placeholder="输入任意问题、概念或课程名…" autocomplete="off" />
+        <button id="go">→</button>
+      </div>
+      <div class="hint" id="landHint">按 Enter 开始 · 你的问题会在这里长成一片星图</div>
+      <div class="modes" id="modes">
+        <button class="modebtn active" data-m="principle">💡 我想弄懂一个原理</button>
+        <button class="modebtn" data-m="fact">🔎 我只想知道一个事实</button>
+      </div>
+      <div class="chips" id="chips">
+        <button>梯度下降</button>
+        <button>傅里叶变换在干什么</button>
+        <button>数学里的正则化是什么</button>
+        <button>新教伦理和资本主义</button>
+        <button>为什么印象派一开始被骂</button>
+        <button>为什么天空是蓝的</button>
+      </div>
+      <div class="landfoot">
+        <span>所有讲解由 AI 实时生成，可能出错 —— 重要内容请自行核对</span>
+        <button class="lfbtn" id="aboutOpenL">关于 · 合规</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen-universe" id="universe">
+    <div class="topbar">
+      <div class="tleft">
+        <button class="brand" id="homeBtn" title="回到首页"><span class="dot"></span>首页</button>
+        <div class="brandwrap">
+          <button class="brand sq" id="brandBtn" title="我问过的问题"><span class="caret">▼</span></button>
+          <div class="menu" id="menu"></div>
+        </div>
+        <div class="searchwrap">
+          <input class="sinput" id="searchInput" placeholder="搜节点，或直接问一个新问题…" autocomplete="off" spellcheck="false">
+          <div class="sres" id="sres"></div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="focusBtn" class="active">聚焦</button>
+        <button id="laneBtn">航线</button>
+        <button id="mergeBtn">合并</button>
+        <button id="zOut">−</button>
+        <button id="zIn">＋</button>
+        <button id="fitBtn">全景</button>
+        <button id="cfgBtn">设置</button>
+      </div>
+    </div>
+
+    <div class="viewport" id="viewport">
+      <div class="world" id="world">
+        <svg class="links" id="links" width="1" height="1"></svg>
+      </div>
+    </div>
+
+    <aside class="panel" id="panel">
+      <div class="phead">
+        <button class="ghost" id="backBtn">←</button>
+        <div class="crumb" id="crumb"></div>
+        <button class="ghost" id="regenBtn" title="重新生成这段讲义">↻</button>
+        <button class="ghost" id="delBtn" title="删除这个节点（Delete）">🗑</button>
+        <button class="ghost" id="closeBtn">✕</button>
+      </div>
+      <div class="ptabs" id="ptabs">
+        <button data-tab="lecture" class="on">讲义</button>
+        <button data-tab="cards">闪卡</button>
+      </div>
+      <div class="pbody" id="pbody"></div>
+      <div class="pfoot">
+        <div class="askline">
+          <input id="followInput" placeholder="追问一句…" autocomplete="off" />
+          <button id="followBtn">↑</button>
+        </div>
+        <div class="followhint">你的追问会长成星图上的一个节点</div>
+      </div>
+    </aside>
+
+    <div class="minimap" id="minimap"><div class="mm-tip">你的宇宙</div><div class="mm-inner" id="mmInner"></div><div class="mm-view" id="mmView"></div></div>
+    <div class="toast" id="toast"></div>
+  </section>
+
+  <div class="cfgmodal" id="cfgModal">
+    <div class="cfgcard">
+      <div class="cfgh">模型配置</div>
+      <div class="cfgsub" id="cfgSub">填一次就行。</div>
+      <label class="cfgl"><span>API 地址</span><input id="cfgBase" placeholder="https://api.deepseek.com/v1" autocomplete="off" /></label>
+      <label class="cfgl"><span>API KEY</span><input id="cfgKey" type="password" placeholder="sk-…" autocomplete="off" /></label>
+      <label class="cfgl"><span>模型名</span><input id="cfgModel" placeholder="deepseek-chat" autocomplete="off" /></label>
+      <div class="cfgprov">
+        <button data-prov="deepseek">DeepSeek</button>
+        <button data-prov="zhipu">智谱</button>
+        <button data-prov="dashscope">通义千问</button>
+        <button data-prov="moonshot">Moonshot</button>
+        <button data-prov="openai">OpenAI</button>
+      </div>
+      <div class="cfgmsg" id="cfgMsg"></div>
+      <div class="cfgacts">
+        <button class="primary" id="cfgSave">保存</button>
+        <button id="cfgTest">测试连接</button>
+        <button id="aboutOpen">关于 · 合规</button>
+        <button id="cfgClose">关闭</button>
+      </div>
+      <div class="cfgnote" id="cfgNote"></div>
+    </div>
+  </div>
+
+  <div class="cfgmodal" id="aboutModal">
+    <div class="cfgcard aboutcard">
+      <div class="cfgh">关于 · 合规说明</div>
+      <div class="cfgsub">这一页里的每一句话，都是模型在你点开它的那一刻现写的。下面是它的来源、它会怎么出错，以及你的数据去了哪里。</div>
+
+      <div class="absec">
+        <h4><span class="abi">✦</span>内容由 AI 生成</h4>
+        <p>每一份讲义、每一个概念名、每一条「常见误解」，都由大语言模型（默认 <code>deepseek-chat</code>，经 DeepSeek API）实时生成。星图的形状也一样：哪些概念该被拎出来、它们之间是什么关系，由模型决定，前端只负责排布。</p>
+        <p>这个项目<b>没有预置知识库</b>。离线模式（双击 HTML、断网演示）里内置了少量样例内容，页面上会标注；除此之外没有人工撰写的讲解文字。</p>
+      </div>
+
+      <div class="absec">
+        <h4><span class="abi">⚠</span>它一定会说错</h4>
+        <p>模型会编。它可能给出错误的年份、人名、公式，也可能把两个概念的关系说反。</p>
+        <p>生成之后有一道<b>零 API 成本的字符串自检</b>（17 项，例如「事实必须一句话说完」「洞察不能只是空话」「不要重复这个星团里已有的概念」）。不合格时会在讲义末尾打一行 <code>##CHECK fail …</code>，并在本机的生成记录里记为一次不合格 —— 但<b>它不会自动改写</b>，重写与否由你按讲义右上角的 ↻ 决定。自检只能拦住格式和空洞，<span class="warn">拦不住错误的知识</span>。</p>
+        <p>所以请把它当成一个<b>把「不懂」变成「可以追问的结构」的工具</b>，而不是答案来源。要写进作业、论文、汇报，或拿来做决定的数字和结论，请回到教材、论文或官方来源核对。</p>
+      </div>
+
+      <div class="absec">
+        <h4><span class="abi">⇢</span>你的数据去了哪里</h4>
+        <ul>
+          <li>你问的每个问题都会以一次 HTTP 请求发给上面配置的模型服务商（默认 DeepSeek）。发送的内容包括：你的问题原文、当前节点的名字、以及同一个星团里已经出现过的概念名（只用于避免重复给出同一个概念）。</li>
+          <li>所以请不要在这里输入<b>个人隐私、未公开的研究数据或受保密约束的材料</b>。</li>
+          <li>星图结构、讲义正文和生成记录只写入本机的 <code>star.db</code>（SQLite 单文件），不上传、不统计、不向任何第三方共享。删掉这个文件就等于清空全部数据。</li>
+          <li>页面不设 cookie，不接第三方统计、广告或追踪脚本。唯一的外部资源是用来排版数学公式的 KaTeX（可选，从 CDN 加载；加载失败时公式退化成纯文本，不影响阅读）。</li>
+        </ul>
+      </div>
+
+      <div class="absec">
+        <h4><span class="abi">⚿</span>凭据与部署边界</h4>
+        <p>服务端模式下，API Key 由本机 Node 服务读取 <code>config.json</code>，浏览器只在设置面板里把它发往 <code>127.0.0.1</code> 一次。但 <b>config.json 里是明文</b>——请不要把它提交到公开仓库或分享出去。</p>
+        <p>直连模式（双击 HTML）下没有服务端，Key 会以明文存进这个浏览器的 localStorage。<b>不要在公用电脑上用直连模式。</b></p>
+        <p>服务只监听 <code>127.0.0.1</code>，且所有 <code>/api/*</code> 接口没有任何鉴权。这意味着它只能在本机使用。<span class="warn">一旦挂到公网，/api/lecture 就等于一个任何人都能调用的开放模型代理，会花光你的额度。</span>要公开部署，必须先加访问令牌、限流和 HTTPS。</p>
+      </div>
+
+      <div class="absec">
+        <h4><span class="abi">⌘</span>依赖与授权</h4>
+        <p>零第三方运行时依赖：没有 <code>package.json</code>，没有 npm 包，没有前端框架。服务端只用 Node 内置的 <code>http</code> / <code>fs</code> / <code>path</code> 与内置 SQLite（<code>node:sqlite</code>），其余代码均为本项目自己写的。</p>
+      </div>
+
+      <div class="cfgacts">
+        <button class="primary" id="aboutClose">知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="askmerge" id="mergeBox">
+    <div class="mt" id="mbT">你好像问过一个很像的问题</div>
+    <div class="mq" id="mbQ"></div>
+    <div class="ma">
+      <button class="primary" id="mbSame">算同一个 · 带我去</button>
+      <button id="mbNew">不一样 · 问新的</button>
+    </div>
+  </div>
+
+<!-- 诊断浮层：页面出问题时把它截图发给开发；平时点一下就收起来 -->
+<div id="diag"></div>
+<script>
+(function(){
+  var d = document.getElementById('diag');
+  var buf = [];
+  function paint(){ d.textContent = buf.join('\n'); }
+  window.__diag = function(s){ buf.push(String(s)); paint(); };
+  window.addEventListener('error', function(e){ window.__diag('❌ ' + e.message + ' @' + e.lineno + ':' + e.colno); });
+  window.addEventListener('unhandledrejection', function(e){
+    var r = e.reason; window.__diag('❌ ' + ((r && r.message) || r));
+  });
+  window.__diag('协议 ' + location.protocol + (location.protocol === 'file:' ? '（双击打开）' : ''));
+  try { localStorage.setItem('__t', '1'); localStorage.removeItem('__t'); window.__diag('localStorage 可用 ✓'); }
+  catch (e) { window.__diag('❌ localStorage 不可用：' + e.message); }
+  setTimeout(function(){
+    var lo = document.getElementById('landing'), un = document.getElementById('universe');
+    window.__diag('landing.gone=' + (!!lo && lo.classList.contains('gone')) +
+                  ' · universe.on=' + (!!un && un.classList.contains('on')) +
+                  ' · star=' + document.querySelectorAll('.star').length);
+    if (lo && lo.classList.contains('gone') && !(un && un.classList.contains('on'))){
+      lo.classList.remove('gone');
+      window.__diag('⚠ 状态异常，已强制退回首页');
+    }
+  }, 2600);
+  /* KaTeX 动态加载：3 秒内没回来就放弃，公式用纯文本 */
+  var ks = document.createElement('script');
+  ks.src = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js';
+  ks.async = true;
+  ks.onload = function(){ window.__diag('KaTeX 就绪（公式可排版）'); };
+  ks.onerror = function(){ window.__diag('⚠ KaTeX 加载失败（没网/CDN 不通）→ 公式用纯文本'); };
+  document.head.appendChild(ks);
+  d.addEventListener('click', function(){ d.style.display = 'none'; });
+})();
+</script>
+<script>
+/* ============ 工具 ============ */
+var seq = 0;
+function uid(){ return 'n' + (++seq); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function hashStr(s){ var h=0; for (var i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) | 0; } return Math.abs(h); }
+function shortLabel(s, n){ n = n || 16; return s.length > n ? s.slice(0, n) + '…' : s; }
+
+/* 问题相似度：先剥掉疑问词和语气词，只留下"主题" */
+var STOPW = ['什么','是','的','吗','呢','怎么','怎样','如何','为什么','为啥','请问','意思','一下','到底','究竟','有哪些','介绍','请','我','想','要','搞懂','明白','了解'];
+function topicTokens(s){
+  s = String(s).replace(/[\s？?。！!，,、；;：:]/g, '');
+  for (var i=0;i<STOPW.length;i++) s = s.split(STOPW[i]).join('');
+  return s;
+}
+function bigrams(x){
+  var g = {};
+  if (x.length < 2){ if (x) g[x] = 1; return g; }
+  for (var i=0;i<x.length-1;i++){ var k = x.substr(i,2); g[k] = (g[k]||0) + 1; }
+  return g;
+}
+function sim(a, b){
+  var x = topicTokens(a), y = topicTokens(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  if (x.indexOf(y) >= 0 || y.indexOf(x) >= 0) return 0.72;
+  var ga = bigrams(x), gb = bigrams(y), inter = 0, uni = 0, k;
+  for (k in ga) if (gb[k]) inter++;
+  for (k in ga) uni++;
+  for (k in gb) if (!ga[k]) uni++;
+  return uni ? inter/uni : 0;
+}
+
+/* ============ 状态 ============ */
+var NODES = {};       /* id -> node  （kind: question | concept） */
+var LECTURES = {};    /* nodeId -> 该节点专属的讲义（追问的回答就走这里） */
+var LIVE = false;     /* 本地服务模式：Key 由服务端的 config.json 保管 */
+var DIRECT = false;   /* 直连模式：双击打开时启用，Key 存在本机浏览器里 */
+var modeReady;
+try {
+  modeReady = fetch('/api/health').then(function(r){ return r.json(); })
+    .then(function(j){ if (j && j.live) LIVE = true; else DIRECT = true; })
+    .catch(function(){ DIRECT = true; });
+} catch (e) { DIRECT = true; modeReady = Promise.resolve(); }
+function whenMode(fn){
+  var done = false, once = function(){ if (!done){ done = true; fn(); } };
+  (modeReady || Promise.resolve()).then(once).catch(once);
+  setTimeout(once, 1500);
+}
+var EDGES = [];
+var CLUSTERS = {};
+var INDEX = {};       /* label -> [nodeId]，模拟 embedding 的概念身份 */
+var HUES = [222, 282, 190, 320, 45];
+function indexAdd(n){ if (!INDEX[n.label]) INDEX[n.label] = []; INDEX[n.label].push(n.id); }
+
+/* ============ 内容 ============ */
+var CONTENT = {
+ '梯度下降': {s:'一种沿着梯度反方向小步前进，逐步降低损失的优化方法。',
+  common:'大多数人以为：梯度下降是在"寻找最低点"。',
+  insight:'其实它只做一件事 —— 每一步都只相信脚下的坡度。所以它永远不知道整座山长什么样，停在哪里完全取决于从哪儿出发。',
+  scene:'你被空投到一座大雾弥漫的山上，要走到谷底。你看不见地图，只能感觉到脚下哪边最陡。于是你朝下坡方向迈一小步，再重新感觉一次，再迈一步。',
+  mechanism:['这个"感觉脚下哪边最陡"的量，就是<t>梯度</t>；"朝它的反方向迈一步"，就是全部的动作。',
+             '把这一步原样写下来，就是下面这个式子 —— 后面所有优化方法，都是它的注脚：'],
+  formula:{ tex:'θ_{t+1} = θ_t − η ∇L(θ_t)',
+    read:'新的参数 = 旧的参数 − 学习率 × 当前的梯度',
+    symbols:[['θ','参数，也就是模型内部那些可调的数字'],['η','学习率：每一步迈多大'],['∇L','损失函数在这一点的梯度，指向最陡的上坡方向']] },
+  bounds:'它的快慢完全取决于山的形状。如果山谷又窄又长，它会在两壁之间来回震荡，走很久都到不了底 —— 这时要靠<t>动量</t>或<t>学习率衰减</t>来救场。',
+  misconceptions:['以为它在"寻找最低点"。其实它只是"一直往低处走"，停在哪里取决于从哪里出发。','以为它保证找到全局最低点。它大概率只给你一个足够好的坑。'],
+  p:[]},
+ '机器学习': {s:'让计算机从数据里自己找出规律，而不是由人把规则写死。',
+  p:['传统程序是人写规则、机器执行；机器学习反过来 —— 人给数据和答案，机器自己总结规则。',
+     '它整件事的核心动作，就是不断调整参数去降低<t>损失函数</t>，而调整的方式通常依赖<t>学习率</t>。',
+     '最危险的失败不是学不会，而是<t>过拟合</t>：把训练数据背得滚瓜烂熟，却认不出新样本。']},
+ '损失函数': {s:'衡量模型预测和真实答案差多少的那把尺子。',
+  p:['训练模型的本质，就是把损失降到最低。它像一个裁判，你每走一步，它都告诉你现在有多差。',
+     '不同的任务会用不同的尺子：预测数值时常用<t>均方误差</t>，做分类时常用<t>交叉熵</t>。']},
+ '学习率': {s:'决定每一步迈多大的超参数。',
+  common:'大多数人以为：学习率越小越稳妥，慢慢来总没错。',
+  insight:'其实它能开多大，是被损失函数的曲率锁死的 —— 有一条精确的不等式在管着它；而太小会让你根本走不到谷底。',
+  scene:'同一个山口，两个人下山：一个每次迈 10 厘米，天黑还没到山脚；另一个每次迈 10 米，一步跨过谷底，摔到对面山上。',
+  mechanism:['学习率 η 乘在<t>梯度</t>前面，直接决定参数每次移动的距离。','而它能开多大有一个硬上限 —— 取决于山最陡的地方有多陡：'],
+  formula:{ tex:'η < 2 / λ_{max}',
+    read:'学习率必须小于 2 除以最大曲率',
+    symbols:[['λmax','损失函数最大的曲率，也就是 Hessian 矩阵的最大特征值'],['2','来自二次型的推导，不是经验常数']] },
+  bounds:'这条不等式在曲率恒定的情形下是精确的；而真实网络的曲率每一步都在变，所以实践中还要靠<t>学习率衰减</t>与<t>动量</t>动态应对。',
+  misconceptions:['"越小越稳"听上去安全，其实是用训练时间换稳定 —— 很多时候你根本等不到它收敛。','以为学习率是一个全局的数。实际上不同层、不同方向需要的步长可以差几个数量级。'],
+  p:[]},
+ '反向传播': {s:'从输出往回走，一层层算出每个参数该负多少责任。',
+  p:['反向传播是<t>梯度下降</t>能够工作的前提 —— 它负责把梯度真正算出来。',
+     '它的数学基础是<t>链式法则</t>，工程上则靠<t>计算图</t>实现自动求导。']},
+ '局部最优': {s:'山谷里的小坑，让你以为已经到底了。',
+  p:['损失函数的形状往往不是光滑的碗，梯度下降可能停在一个局部最优上。',
+     '更麻烦的是<t>鞍点</t>：那里梯度同样为零，却根本不是最低点。如果问题恰好属于<t>凸优化</t>，这份烦恼就不存在。']},
+ '随机梯度下降': {s:'每次只拿一小批数据来算梯度。',
+  p:['全量计算太慢，于是每次只随机抽一小批样本 —— 这就是<t>批量大小</t>的取舍。',
+     '它带来的噪声反而有帮助，能把你从<t>局部最优</t>里晃出来。']},
+ '过拟合': {s:'把训练数据背下来了，却学不会新东西。',
+  p:['它在训练集上表现完美，一遇到新数据就原形毕露。',
+     '常见的对策是<t>正则化</t>与<t>交叉验证</t>。']},
+ '训练集': {s:'模型用来学习的那部分数据。',
+  p:['它和<t>验证集</t>、<t>测试集</t>一起，构成评估模型的基本分工。',
+     '如果模型见过测试集，那分数就毫无意义 —— 这是最常见的一种自欺。']},
+ '均方误差': {s:'把误差平方后求平均的经典损失函数。', p:['均方误差对<t>异常值</t>格外敏感，因为误差被平方放大了。']},
+ '交叉熵': {s:'分类任务里最常用的损失函数。', p:['它衡量两个概率分布之间的差异，通常配合 <b>Softmax</b> 使用。']},
+ '学习率衰减': {s:'训练过程中逐渐把学习率调小。', p:['越接近谷底，步子就越该小 —— 学习率衰减就是把这件事自动化。']},
+ '动量': {s:'给梯度下降加一点惯性。', p:['动量让参数更新记住之前的方向，从而冲过<t>局部最优</t>与平坦区域。']},
+ '链式法则': {s:'复合函数求导的基本规则。', p:['链式法则说：把一层层的局部导数乘起来，就得到整体的导数。它是<t>反向传播</t>的全部数学内容。']},
+ '计算图': {s:'把运算画成图，然后自动求导。', p:['每个节点是一次运算，边是数据的流动；从后往前遍历这张图，就得到了<t>反向传播</t>。']},
+ '鞍点': {s:'梯度为零，但并不是极值点的位置。', p:['在高维空间里，鞍点比<t>局部最优</t>更常见，也是优化真正难缠的对手。']},
+ '凸优化': {s:'如果问题是凸的，局部最优就是全局最优。', p:['凸性是一种奢侈：它让你不必再担心<t>局部最优</t>。']},
+ '批量大小': {s:'每次参数更新用多少样本。', p:['批量越大越稳但越慢，越小越快但越抖 —— 这正是<t>随机梯度下降</t>的核心权衡。']},
+ '看涨期权': {s:'赌标的会涨的那一类期权。', p:['它给你一个权利：到期时按<t>行权价</t>买入。涨得越多，它越值钱。']},
+ '看跌期权': {s:'赌标的会跌的那一类期权。', p:['它给你一个权利：到期时按<t>行权价</t>卖出。跌得越多，它越值钱。']},
+ '行权价': {s:'合约里约定的那个买卖价格。', p:['行权价与现价的差距，决定了期权是「实值」还是「虚值」。而市场对未来的不安，写在<t>隐含波动率</t>里。']},
+ '隐含波动率': {s:'市场对未来波动的预期，藏在价格里。', p:['它是唯一不能直接观测、只能从<t>行权价</t>与权利金里反推出来的变量。']},
+ '傅里叶变换': {s:'把一个信号拆成不同频率的波，看它由哪些成分组成。',
+  common:'大多数人以为：傅里叶变换是一种「变换」，把一个东西变成另一个东西。',
+  insight:'其实它并不是换掉了什么，反而只是换了个看的角度 —— 同一个声音，从「随时间起伏」改成「由哪几个音高组成」。',
+  scene:'你在钢琴上同时按下三个键，耳朵里听到的是一个混合的声音。它告诉你：这三个声音可以各自被单独指出来，一个都不差。',
+  p:[]},
+ '正则化': {s:'方程的解不唯一时，用一条额外的偏好把答案钉住。',
+  common:'大多数人以为：正则化就是机器学习里「加个惩罚项、防止过拟合」。',
+  insight:'其实它并不是模型的专利，反而来自更早的数学：数据不够多的时候答案本来就不唯一，你必须先声明你偏好哪一种。',
+  scene:'给你一个方程、两个未知数，满足它的答案有整整一条直线那么多。你得补上「我要离原点最近的那个」，答案才缩成一个点。',
+  p:[]},
+ '新教伦理': {s:'韦伯的说法：加尔文宗的救赎焦虑，意外养成了资本主义的工作伦理。',
+  common:'大多数人以为：新教伦理就是「基督徒勤俭节约、反对享乐」的一套道德说教。',
+  insight:'其实它并不是在提倡赚钱，恰恰相反 —— 它要求人拼命工作，又禁止享受成果，于是利润只能被不断投回生产。',
+  scene:'十六世纪的一个商人赚了一笔钱，却不能花在自己身上：不能赴宴、不能穿好衣服。于是这笔钱只剩一个去处 —— 再做一笔。',
+  p:[]},
+ '印象派': {s:'一群被官方沙龙拒绝的画家，把当时眼睛看到的光直接画了出来。',
+  common:'大多数人以为：印象派就是画得模糊、看不清细节的风景画。',
+  insight:'其实它并不是画得潦草，反而是一次刻意的取舍 —— 放弃画「那个东西是什么」，改画「光此刻是怎么落上去的」。',
+  scene:'1874 年，一个人站在展厅里凑近看那幅日出：没有轮廓，只有一堆笔触。他退后三步，港口忽然出现了。',
+  p:[]}
+};
+
+var CHILDREN = {
+ '梯度下降': [['损失函数','前置','不知道损失，就不知道往哪走','我怎么知道自己现在有多差？'],['学习率','参数','它决定每一步迈多大','一步到底该迈多大？'],['反向传播','上游','梯度到底是怎么算出来的','这个"坡度"是谁算出来的？'],['局部最优','陷阱','为什么会卡住出不来','卡在坑里出不来怎么办？']],
+ '机器学习': [['损失函数','目标','一切训练都在降低它'],['学习率','参数','调整的步子有多大'],['过拟合','陷阱','背下来 ≠ 学会了'],['训练集','要素','模型吃进去的数据']],
+ '损失函数': [['均方误差','变体','回归任务常用的尺子'],['交叉熵','变体','分类任务常用的尺子']],
+ '学习率': [['学习率衰减','技巧','越接近谷底，步子越要小','能不能让它自己越走越小？'],['动量','技巧','给下降加一点惯性','为什么要在下坡路上加惯性？']],
+ '反向传播': [['链式法则','数学基础','复合函数求导的规则'],['计算图','工程实现','把运算画成图来自动求导']],
+ '局部最优': [['鞍点','概念','梯度为零，却不是最低点'],['凸优化','出路','如果问题是凸的就不必担心']],
+ '随机梯度下降': [['批量大小','参数','每次用多少样本更新']],
+ '过拟合': [['正则化','对策','给模型戴上镣铐'],['交叉验证','对策','换一份数据继续考它']],
+ '训练集': [['验证集','分工','用来挑超参数的那份'],['测试集','分工','最后才准碰的那份']],
+ '期权是什么': [['看涨期权','类型','赌它会涨'],['看跌期权','类型','赌它会跌'],['行权价','要素','约定的买卖价格'],['隐含波动率','要素','市场对未来的不安程度']],
+ '傅里叶变换': [['频率','概念','它把信号拆成的那个维度'],['时域与频域','对比','同一件事的两种看法'],['卷积定理','延伸','为什么滤波在频域里变成乘法']],
+ '正则化': [['不适定问题','前置','数学里它真正要救的那个场'],['L1 与 L2','变体','不同的偏好给出不同的答案'],['λ 怎么选','参数','这条偏好应该有多强']],
+ '新教伦理': [['预定论','前置','救赎焦虑是从哪来的'],['天职观','概念','工作为什么变成了义务'],['世俗禁欲','机制','赚了钱却不能花']],
+ '印象派': [['外光画法','技巧','为什么要跑到户外去画'],['笔触','技巧','为什么画得「不完整」'],['沙龙落选展','背景','被拒之后他们自己办了展']]
+};
+
+var KNOWN = {
+ '梯度':['梯度','概念','它到底是哪个方向'],'异常值':['异常值','陷阱','一个点就能带偏整条线'],
+ 'Softmax':['Softmax','工具','把分数变成概率'],'均方误差':['均方误差','变体','回归任务常用的尺子'],
+ '交叉熵':['交叉熵','变体','分类任务常用的尺子'],'损失函数':['损失函数','前置','不知道损失就不知道往哪走'],
+ '学习率':['学习率','参数','它决定每一步迈多大'],'随机梯度下降':['随机梯度下降','变体','数据太多时的做法'],
+ '批量大小':['批量大小','参数','每次用多少样本更新'],'行权价':['行权价','要素','约定的买卖价格'],
+ '隐含波动率':['隐含波动率','要素','市场对未来的预期'],'反向传播':['反向传播','上游','梯度是怎么算出来的'],
+ '正则化':['正则化','对策','给模型戴上镣铐'],'交叉验证':['交叉验证','对策','换一份数据继续考它'],
+ '验证集':['验证集','分工','用来挑超参数的那份'],'测试集':['测试集','分工','最后才准碰的那份'],
+ '局部最优':['局部最优','陷阱','为什么会卡住出不来'],'梯度下降':['梯度下降','概念','整个星团的原点'],
+ '频率':['频率','概念','它把信号拆成的那个维度'],'预定论':['预定论','前置','救赎焦虑是从哪来的'],
+ '天职观':['天职观','概念','工作为什么变成义务'],'外光画法':['外光画法','技巧','为什么跑到户外画'],
+ '不适定问题':['不适定问题','前置','答案不唯一的那些方程']
+};
+
+var GENERIC_POOL = [
+ ['它解决什么问题','动机','先知道它为什么存在'],
+ ['核心思想','主干','一句话讲清它的骨架'],
+ ['前置知识','前置','不懂这个就学不下去'],
+ ['常见误解','陷阱','大多数人在这里想错'],
+ ['实际应用','应用','它到底被用在哪'],
+ ['进阶方向','进阶','想深入该往哪走'],
+ ['关键术语','主干','绕不开的几个词'],
+ ['基本假设','前提','它默认了什么成立'],
+ ['历史脉络','背景','它是被什么问题逼出来的'],
+ ['边界与限制','限制','它在哪儿会失效'],
+ ['和它的近亲','比较','最容易混淆的那几个'],
+ ['怎么练','方法','上手该从哪一步开始']
+];
+function genericSpecs(topic){
+  var h = hashStr(topic), idx = [], i;
+  for (i=0;i<GENERIC_POOL.length;i++) idx.push(i);
+  for (i=idx.length-1;i>0;i--){ h = (h*1103515245 + 12345) & 0x7fffffff; var j = h % (i+1); var t = idx[i]; idx[i] = idx[j]; idx[j] = t; }
+  var out = [];
+  for (i=0;i<4;i++) out.push(GENERIC_POOL[idx[i]]);
+  return out;
+}
+function contentOf(name, topic){
+  if (CONTENT[name]) return CONTENT[name];
+  return { s:'「' + name + '」是理解「' + topic + '」绕不开的一环。',
+    p:['这一节要讲清楚的是：它为什么存在、它长什么样、以及它和「' + topic + '」的关系。',
+       '你可以把它理解成地图上的一个地标 —— 单看它没有意义，只有配上通往它的那些路，它才有了位置。'] };
+}
+function childrenOf(name){ return CHILDREN[name] || []; }
+
+/* ============ 建图 ============ */
+function makeNode(cl, parent, label, rel, why, x, y){
+  var id = uid();
+  var n = { id:id, kind: parent ? 'concept' : 'question', label:label, cluster:cl.id,
+    parentId: parent ? parent.id : null, x:x, y:y, rel:rel, why:why,
+    visited:false, children:[], crossIds:[], manualIds:[] };
+  NODES[id] = n;
+  if (parent) parent.children.push(id);
+  cl.nodeIds.push(id);
+  indexAdd(n);
+  return n;
+}
+/* 同一个概念被两个问题分别拽出来 → 各自一个投影，之间留一条"航线"（默认不画） */
+function linkCross(n){
+  var list = INDEX[n.label] || [];
+  for (var i=0;i<list.length;i++){
+    var o = NODES[list[i]];
+    if (o.id === n.id || o.cluster === n.cluster) continue;
+    n.crossIds.push(o.id);
+    o.crossIds.push(n.id);
+    EDGES.push({a:n.id, b:o.id, cluster:n.cluster, cross:true});
+    markShared(n); markShared(o);
+  }
+}
+function markShared(n){
+  n.el && n.el.classList.add('shared');
+  if (n.el && !n.el.querySelector('.mk')){
+    var s = document.createElement('span');
+    s.className = 'mk'; s.textContent = '◈';
+    n.el.appendChild(s);
+  }
+}
+function layoutChildren(cl, parent, specs){
+  if (!specs || !specs.length) return;
+  var isRoot = !parent.parentId;
+  var base = isRoot ? -Math.PI/2 : Math.atan2(parent.y - cl.cy, parent.x - cl.cx);
+  for (var i=0;i<specs.length;i++){
+    var spec = specs[i];
+    var a = isRoot ? base + i*(2*Math.PI/specs.length) : base + (i-(specs.length-1)/2)*0.85;
+    var r = isRoot ? 205 + (i%2)*28 : 148 + (i%2)*24;
+    var n = makeNode(cl, parent, spec[0], spec[1], spec[2], parent.x + Math.cos(a)*r, parent.y + Math.sin(a)*r);
+    n.question = spec[3] || null;
+    EDGES.push({a:parent.id, b:n.id, cluster:cl.id});
+    linkCross(n);
+  }
+}
+function createCluster(name, cx, cy, specs){
+  var key = Object.keys(CLUSTERS).length;
+  var id = 'c' + (key + 1);
+  var cl = { id:id, name:name, cx:cx, cy:cy, hue:HUES[key % HUES.length], nodeIds:[], aliases:[] };
+  CLUSTERS[id] = cl;
+  var root = makeNode(cl, null, name, null, null, cx, cy);
+  cl.rootId = root.id;
+  layoutChildren(cl, root, specs);
+  return cl;
+}
+function freeSpot(){
+  var existing = [];
+  for (var cid in CLUSTERS) existing.push(CLUSTERS[cid]);
+  var radii = [1500, 1850, 2250, 2700, 3200], best = null, bestD = -1;
+  for (var ri=0; ri<radii.length; ri++){
+    for (var a=0; a<16; a++){
+      var ang = a*(2*Math.PI/16) + ri*0.29;
+      var x = Math.cos(ang)*radii[ri], y = Math.sin(ang)*radii[ri]*0.62;
+      var d = 1e9;
+      for (var i=0;i<existing.length;i++){
+        var dx = x-existing[i].cx, dy = y-existing[i].cy;
+        var dd = Math.sqrt(dx*dx + dy*dy);
+        if (dd < d) d = dd;
+      }
+      if (d > 900) return {x:x, y:y};
+      if (d > bestD){ bestD = d; best = {x:x, y:y}; }
+    }
+  }
+  return best || {x:0, y:0};
+}
+
+/* ============ 渲染 ============ */
+var world, linksSvg, viewport;
+/* 三档层级：0 = 星团根（恒星）、1 = 根直接拽出的概念（行星）、≥2 = 更远（卫星） */
+function depthOf(n){
+  var d = 0, p = n.parentId;
+  while (p && NODES[p] && d < 12){ d++; p = NODES[p].parentId; }
+  return d;
+}
+function applyTier(n, el){
+  var d = depthOf(n);
+  el.classList.toggle('root', d === 0);
+  el.classList.toggle('t1', d === 1);
+  el.classList.toggle('visited', !!n.visited);
+  el.classList.toggle('fact', n.kind === 'fact');   /* 从库里恢复的「读过」状态也要补回样式 */
+  el.setAttribute('data-d', String(Math.min(d, 2)));
+}
+function mount(){
+  for (var i=0;i<EDGES.length;i++){
+    var e = EDGES[i];
+    if (e.el) continue;
+    var ln = document.createElementNS('http://www.w3.org/2000/svg','line');
+    ln.setAttribute('x1', NODES[e.a].x); ln.setAttribute('y1', NODES[e.a].y);
+    ln.setAttribute('x2', NODES[e.b].x); ln.setAttribute('y2', NODES[e.b].y);
+    ln.dataset.id = e.a + '_' + e.b;
+    var isBridgeEdge = (NODES[e.a] && NODES[e.a].kind === 'bridge') || (NODES[e.b] && NODES[e.b].kind === 'bridge');
+    if (isBridgeEdge) ln.setAttribute('class', e.cross ? 'cross bridge' : 'bridge');
+    else if (e.cross) ln.setAttribute('class', 'cross');
+    linksSvg.appendChild(ln);
+    e.el = ln;
+  }
+  for (var id in NODES){
+    var n = NODES[id];
+    if (n.el){ applyTier(n, n.el); continue; }
+    var d = document.createElement('div');
+    d.className = 'node';
+    if (n.kind === 'question') d.classList.add('q');
+    if (n.kind === 'bridge') d.classList.add('bridge');
+    if (n.kind === 'fact') d.classList.add('fact');
+    applyTier(n, d);                       /* 0 恒星 / 1 行星 / ≥2 卫星：配色全部交给 CSS 的 --f-* */
+    if (n.crossIds && n.crossIds.length) d.classList.add('shared');
+    d.style.left = n.x + 'px';
+    d.style.top  = n.y + 'px';
+    var _cl = CLUSTERS[n.cluster];
+    if (!_cl) continue;                       /* 宁可少画一个节点，也不能让整页崩掉 */
+    d.style.setProperty('--h', String(_cl.hue));
+    var inner = '';
+    if (n.kind === 'question') inner += '<span class="qmk">✦</span>';
+    if (n.kind === 'bridge') inner += '<span class="bmk">⇄</span>';
+    if (n.kind === 'fact') inner += '<span class="fmk">◆</span>';
+    inner += shortLabel(n.label);
+    if (n.crossIds && n.crossIds.length) inner += '<span class="mk">◈</span>';
+    if (n.rel) inner += '<span class="rel">' + n.rel + '</span>';
+    d.innerHTML = inner;
+    d.dataset.id = id;
+    d.addEventListener('mousedown', function(ev){
+      ev.stopPropagation();
+      startClusterDrag(NODES[this.dataset.id].cluster, ev);
+    });
+    d.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      if (suppressClick){ suppressClick = false; return; }
+      var nid = this.dataset.id;
+      if (laneForced){ laneClick(nid); return; }
+      openNode(nid);
+      focusNode(nid, Math.max(V.k, 1.0));
+    });
+    d.addEventListener('contextmenu', function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      if (askDeleteHook) askDeleteHook(this.dataset.id);
+    });
+    world.appendChild(d);
+    n.el = d;
+  }
+  for (var cid in CLUSTERS){
+    var cl = CLUSTERS[cid];
+    if (cl.labelEl) continue;
+    var l = document.createElement('div');
+    l.className = 'clabel';
+    l.textContent = shortLabel(cl.name, 12);
+    l.style.left = cl.cx + 'px';
+    l.style.top  = (cl.cy - 300) + 'px';
+    world.appendChild(l);
+    cl.labelEl = l;
+  }
+  mmDirty = true;
+  updateMinimap();
+  scheduleSave();
+}
+function redrawEdges(only){
+  for (var i=0;i<EDGES.length;i++){
+    var e = EDGES[i];
+    if (!e.el) continue;
+    if (only && !only[e.a] && !only[e.b]) continue;
+    var a = NODES[e.a], b = NODES[e.b];
+    e.el.setAttribute('x1', a.x); e.el.setAttribute('y1', a.y);
+    e.el.setAttribute('x2', b.x); e.el.setAttribute('y2', b.y);
+  }
+}
+function revealNode(id, delay){
+  var n = NODES[id];
+  setTimeout(function(){ if (n.el) n.el.classList.add('show'); }, delay);
+}
+function revealCluster(cl, base){
+  revealNode(cl.rootId, base);
+  var i = 0;
+  for (var k in NODES){
+    if (NODES[k].cluster === cl.id && NODES[k].parentId) revealNode(k, base + 260 + (i++)*140);
+  }
+}
+
+/* ============ 视图 ============ */
+var V = {px:0, py:0, k:1};
+var animId = null, _vQueued = false, _dragQueued = false, _dragQ = null, _isFar = false;
+
+/* 拖拽 / 滚轮时不要每次事件都重画：高回报率鼠标一秒能报上千次 mousemove，
+   合并到下一帧只画一次，位置仍然是最后那一个，手感反而更顺。
+   另外 far（缩得很远时整体变暗）加迟滞：0.58 才进入、0.70 才退出，
+   免得停在 0.62 附近来回抖，每抖一次都是五十个节点重算样式。 */
+function applySoon(){
+  if (_vQueued) return;
+  _vQueued = true;
+  requestAnimationFrame(function(){ _vQueued = false; apply(); });
+}
+function moveClusterSoon(cid, nx, ny){
+  _dragQ = { cid: cid, nx: nx, ny: ny };
+  if (_dragQueued) return;
+  _dragQueued = true;
+  requestAnimationFrame(function(){
+    _dragQueued = false;
+    var q = _dragQ; _dragQ = null;
+    if (q) moveCluster(q.cid, q.nx, q.ny);
+  });
+}
+function apply(){
+  world.style.transform = 'translate(' + V.px + 'px,' + V.py + 'px) scale(' + V.k + ')';
+  var wantFar = _isFar ? (V.k < 0.70) : (V.k < 0.58);
+  if (wantFar !== _isFar){ _isFar = wantFar; document.body.classList.toggle('far', _isFar); }
+  updateMinimap();
+}
+function setView(x, y, k, animate){
+  var vw = viewport.clientWidth, vh = viewport.clientHeight;
+  var tx = vw/2 - x*k, ty = vh/2 - y*k;
+  if (!animate){ V.px = tx; V.py = ty; V.k = k; apply(); return; }
+  var s = {x:V.px, y:V.py, k:V.k}, t0 = performance.now(), dur = 700;
+  if (animId) cancelAnimationFrame(animId);
+  function step(t){
+    var p = Math.min(1, (t - t0)/dur), e = 1 - Math.pow(1-p, 3);
+    V.px = s.x + (tx - s.x)*e; V.py = s.y + (ty - s.y)*e; V.k = s.k + (k - s.k)*e;
+    apply();
+    animId = (p < 1) ? requestAnimationFrame(step) : null;
+  }
+  animId = requestAnimationFrame(step);
+}
+function focusNode(id, k){
+  var n = NODES[id];
+  setView(n.x, n.y, clamp(k, 0.32, 2.4), true);
+}
+function bounds(){
+  var minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
+  for (var id in NODES){
+    if (hiddenIds[id]) continue;
+    var n = NODES[id], w = n.label.length*15 + 46;
+    minX = Math.min(minX, n.x - w/2); maxX = Math.max(maxX, n.x + w/2);
+    minY = Math.min(minY, n.y - 24);  maxY = Math.max(maxY, n.y + 24);
+  }
+  for (var cid in CLUSTERS){ var cl = CLUSTERS[cid]; minY = Math.min(minY, cl.cy - 320); }
+  if (minX > maxX) return {minX:-400,maxX:400,minY:-300,maxY:300};
+  return {minX:minX,maxX:maxX,minY:minY,maxY:maxY};
+}
+function fitAll(){
+  var b = bounds(), pad = 190;
+  var vw = viewport.clientWidth, vh = viewport.clientHeight;
+  var k = clamp(Math.min(vw/(b.maxX-b.minX+pad*2), vh/(b.maxY-b.minY+pad*2)), 0.2, 1.1);
+  setView((b.minX+b.maxX)/2, (b.minY+b.maxY)/2, k, true);
+}
+
+/* ============ 小地图 ============ */
+var mmInner, mmView, minimap, mmDots = {}, mmDirty = true;
+function mmGeo(){
+  var b = bounds(), pad = 10, mw = 184, mh = 124;
+  var s = Math.min((mw-pad*2)/Math.max(1,(b.maxX-b.minX)), (mh-pad*2)/Math.max(1,(b.maxY-b.minY)));
+  var offx = pad + ((mw-pad*2) - (b.maxX-b.minX)*s)/2;
+  var offy = pad + ((mh-pad*2) - (b.maxY-b.minY)*s)/2;
+  return {b:b, s:s, offx:offx, offy:offy};
+}
+/* 小地图：圆点元素复用，只改样式 —— 之前每帧重建 innerHTML 是卡顿的主因 */
+function updateMinimap(){
+  if (!mmInner) return;
+  var g = mmGeo(), b = g.b, s = g.s, offx = g.offx, offy = g.offy;
+  if (mmDirty){
+  var seen = {};
+  for (var id in NODES){
+    if (hiddenIds[id]) continue;
+    var n = NODES[id];
+    var el = mmDots[id];
+    if (!el){
+      el = document.createElement('div');
+      el.className = 'mm-dot';
+      var _mc = CLUSTERS[n.cluster];
+      if (!_mc) continue;
+      el.style.background = 'hsl(' + _mc.hue + ',70%,72%)';
+      mmInner.appendChild(el);
+      mmDots[id] = el;
+    }
+    var r = n.parentId ? 1.7 : 4;                   /* 缩略图里根节点也放大一号 */
+    el.style.width = (r*2) + 'px';
+    el.style.height = (r*2) + 'px';
+    el.style.left = (offx + (n.x - b.minX)*s) + 'px';
+    el.style.top  = (offy + (n.y - b.minY)*s) + 'px';
+    el.style.opacity = n.parentId ? (n.visited ? 0.95 : 0.5) : 1;
+    seen[id] = 1;
+  }
+  for (var k in mmDots){
+    if (!seen[k]){ if (mmDots[k].parentNode) mmDots[k].parentNode.removeChild(mmDots[k]); delete mmDots[k]; }
+  }
+  mmDirty = false;
+  }
+  mmView.style.left = (offx + ((-V.px)/V.k - b.minX)*s) + 'px';
+  mmView.style.top  = (offy + ((-V.py)/V.k - b.minY)*s) + 'px';
+  mmView.style.width = (viewport.clientWidth / V.k * s) + 'px';
+  mmView.style.height = (viewport.clientHeight / V.k * s) + 'px';
+}
+/* 补间过程中只挪"正在动的那几个"圆点：全图几百个点每帧重写一遍是白费的 */
+function mmMoveOnly(moves){
+  if (!mmInner || !moves.length) return;
+  var g = mmGeo(), b = g.b, s = g.s, offx = g.offx, offy = g.offy;
+  for (var i=0;i<moves.length;i++){
+    var el = mmDots[moves[i].node.id];
+    if (!el) continue;
+    el.style.left = (offx + (moves[i].node.x - b.minX)*s) + 'px';
+    el.style.top  = (offy + (moves[i].node.y - b.minY)*s) + 'px';
+  }
+}
+
+/* ============ 闪卡：从讲义派生，零 API 成本 ============ */
+var panelTab = 'lecture', fcList = [], fcIdx = 0;
+function cardsFor(n){
+  var L = LECTURES[n.id];
+  if (!L){ var cl = CLUSTERS[n.cluster]; L = contentOf(n.label, cl ? cl.name : ''); }
+  if (!L) return [];
+  var out = [], name = n.label;
+  var one = L.insight || L.s;
+  if (one) out.push({ tag: '一句话', q: '一句话讲清「' + name + '」', a: one });
+  var wrong = [];
+  if (L.common) wrong.push(L.common);
+  if (L.misconceptions && L.misconceptions.length) wrong = wrong.concat(L.misconceptions);
+  if (wrong.length) out.push({ tag: '易错', q: '大多数人在这里是怎么想错的？', a: wrong.join('　') });
+  if (L.bounds) out.push({ tag: '边界', q: '「' + name + '」在什么时候不成立？', a: L.bounds });
+  if (L.formula && L.formula.tex) out.push({ tag: '公式', q: '写出「' + name + '」的公式，并说清每个符号', a: null, formula: L.formula });
+  if (L.scene) out.push({ tag: '画面', q: '给一个不出现任何专业名词的具体画面', a: L.scene });
+  return out;
+}
+function updateTabCount(k){
+  var b = document.querySelector('#ptabs button[data-tab="cards"]');
+  if (b) b.textContent = k ? ('闪卡 ' + k) : '闪卡';
+}
+function paintCard(){
+  var c = fcList[fcIdx];
+  if (!c) return;
+  var card = document.getElementById('fcCard');
+  if (!card) return;
+  card.classList.remove('flipped');
+  document.getElementById('fcTag').textContent = c.tag;
+  document.getElementById('fcQ').textContent = c.q;
+  var A = document.getElementById('fcA');
+  A.innerHTML = '';
+  if (c.formula){
+    var tex = document.createElement('div');
+    tex.className = 'tex';
+    tex.setAttribute('data-tex', c.formula.tex);
+    tex.textContent = c.formula.tex;
+    A.appendChild(tex);
+    if (c.formula.read){ var r = document.createElement('div'); r.className = 'fc-read'; r.textContent = '读作：' + c.formula.read; A.appendChild(r); }
+    if (c.formula.symbols){
+      for (var i=0;i<c.formula.symbols.length;i++){
+        var s = document.createElement('div'); s.className = 'fc-sym';
+        var b = document.createElement('b'); b.textContent = c.formula.symbols[i][0];
+        s.appendChild(b); s.appendChild(document.createTextNode(' ' + c.formula.symbols[i][1]));
+        A.appendChild(s);
+      }
+    }
+    renderMath(A);
+  } else {
+    A.textContent = c.a || '';
+  }
+  document.getElementById('fcPos').textContent = (fcIdx + 1) + ' / ' + fcList.length;
+}
+function showCards(){
+  var n = NODES[currentId];
+  if (!n) return;
+  fcList = cardsFor(n);
+  fcIdx = 0;
+  updateTabCount(fcList.length);
+  if (!fcList.length){
+    pbody.innerHTML = '<p class="lanenote">这张卡还没有内容 —— 等讲义生成完，再点「闪卡」。</p>';
+    return;
+  }
+  pbody.innerHTML =
+    '<div class="fc"><div class="fc-card" id="fcCard"><div class="fc-inner">' +
+      '<div class="fc-face fc-front"><div class="fc-tag" id="fcTag"></div><div class="fc-text" id="fcQ"></div><div class="fc-hint">点击卡片翻面 · 空格键</div></div>' +
+      '<div class="fc-face fc-back"><div class="fc-tag">答案</div><div class="fc-text" id="fcA"></div></div>' +
+    '</div></div>' +
+    '<div class="fc-bar"><button id="fcPrev">←</button><span id="fcPos"></span><button id="fcNext">→</button></div></div>';
+  pbody.scrollTop = 0;
+  paintCard();
+  document.getElementById('fcCard').addEventListener('click', flipCard);
+  document.getElementById('fcPrev').addEventListener('click', function(e){ e.stopPropagation(); moveCard(-1); });
+  document.getElementById('fcNext').addEventListener('click', function(e){ e.stopPropagation(); moveCard(1); });
+}
+function flipCard(){
+  var c = document.getElementById('fcCard');
+  if (c) c.classList.toggle('flipped');
+}
+function moveCard(d){
+  if (!fcList.length) return;
+  fcIdx = (fcIdx + d + fcList.length) % fcList.length;
+  paintCard();
+}
+function setTab(t){
+  panelTab = t;
+  var bs = document.querySelectorAll('#ptabs button');
+  for (var i=0;i<bs.length;i++) bs[i].classList.toggle('on', bs[i].dataset.tab === t);
+  if (t === 'cards') showCards();
+  else if (currentId) openNode(currentId, false);
+}
+document.addEventListener('keydown', function(e){
+  if (panelTab !== 'cards' || !panel || !panel.classList.contains('open')) return;
+  var ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+  if (e.key === 'ArrowLeft') moveCard(-1);
+  else if (e.key === 'ArrowRight') moveCard(1);
+  else if (e.key === ' ' || e.key === 'Spacebar'){ e.preventDefault(); flipCard(); }
+});
+
+/* ============ 手动航线：在航线模式下点两个节点把它们连起来 ============ */
+var lanePick = null;
+function laneEdge(a, b){
+  for (var i=0;i<EDGES.length;i++){
+    var e = EDGES[i];
+    if (!e.cross) continue;
+    if ((e.a === a && e.b === b) || (e.a === b && e.b === a)) return e;
+  }
+  return null;
+}
+function clearPick(){
+  if (lanePick && NODES[lanePick] && NODES[lanePick].el) NODES[lanePick].el.classList.remove('picked');
+  lanePick = null;
+}
+function addManualLane(a, b){
+  var na = NODES[a], nb = NODES[b];
+  if (!na || !nb) return;
+  if (!na.manualIds) na.manualIds = [];
+  if (!nb.manualIds) nb.manualIds = [];
+  if (na.manualIds.indexOf(b) < 0) na.manualIds.push(b);
+  if (nb.manualIds.indexOf(a) < 0) nb.manualIds.push(a);
+  var e = { a:a, b:b, cluster:na.cluster, cross:true, manual:true };
+  EDGES.push(e);
+  var ln = document.createElementNS('http://www.w3.org/2000/svg','line');
+  ln.setAttribute('x1', na.x); ln.setAttribute('y1', na.y);
+  ln.setAttribute('x2', nb.x); ln.setAttribute('y2', nb.y);
+  ln.dataset.id = a + '_' + b;
+  ln.setAttribute('class', 'cross manual hot');
+  linksSvg.appendChild(ln);
+  e.el = ln;
+  setTimeout(function(){ if (ln.parentNode) ln.classList.remove('hot'); }, 1800);
+}
+function removeManualLane(a, b){
+  for (var i=EDGES.length-1;i>=0;i--){
+    var e = EDGES[i];
+    if (!e.manual) continue;
+    if ((e.a === a && e.b === b) || (e.a === b && e.b === a)){
+      if (e.el && e.el.parentNode) e.el.parentNode.removeChild(e.el);
+      EDGES.splice(i,1);
+    }
+  }
+  var na = NODES[a], nb = NODES[b];
+  if (na && na.manualIds){ var k = na.manualIds.indexOf(b); if (k >= 0) na.manualIds.splice(k,1); }
+  if (nb && nb.manualIds){ var k2 = nb.manualIds.indexOf(a); if (k2 >= 0) nb.manualIds.splice(k2,1); }
+}
+function laneClick(id){
+  if (!lanePick){
+    lanePick = id;
+    if (NODES[id].el) NODES[id].el.classList.add('picked');
+    showToast('再点一个节点，把它和「' + shortLabel(NODES[id].label, 10) + '」连起来');
+    return;
+  }
+  if (lanePick === id){ clearPick(); showToast('已取消'); return; }
+  var a = lanePick;
+  clearPick();
+  var ex = laneEdge(a, id);
+  if (ex && ex.manual){ removeManualLane(a, id); showToast('这条航线已删除'); return; }
+  if (ex){ showToast('这两个之间已经有航线了'); return; }
+  addManualLane(a, id);
+  showToast('航线已添加 —— 紫色是 AI 找到的，蓝色是你连的');
+}
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && lanePick){ clearPick(); showToast('已取消连线'); }
+});
+
+/* ============ 聚焦模式：只显示你走过的路 ============ */
+var focusMode = true, hiddenIds = {};
+function refreshVisibility(){
+  if (!focusMode || laneForced){
+    hiddenIds = {};
+    for (var a in NODES){ if (NODES[a].el) NODES[a].el.classList.remove('dim'); }
+    for (var b=0;b<EDGES.length;b++){ if (EDGES[b].el) EDGES[b].el.classList.remove('dim'); }
+    mmDirty = true; updateMinimap();
+    return;
+  }
+  var keep = {}, cur = currentId ? NODES[currentId] : null;
+  hiddenIds = {};
+  for (var id in NODES){
+    var n = NODES[id];
+    var vis = false;
+    if (!n.parentId) vis = true;                                  /* 星团原点永远在 */
+    if (n.visited) vis = true;                                    /* 走过的路永远在 */
+    if (n.rel === '追问') vis = true;                             /* 你亲口问过的 */
+    if (cur && (n.id === cur.id || n.parentId === cur.id)) vis = true;  /* 当前节点的下一步 */
+    keep[id] = vis;
+    if (!vis) hiddenIds[id] = 1;
+    if (n.el) n.el.classList.toggle('dim', !vis);
+  }
+  for (var j=0;j<EDGES.length;j++){
+    var e = EDGES[j];
+    if (!e.el) continue;
+    e.el.classList.toggle('dim', !(keep[e.a] && keep[e.b]));
+  }
+  mmDirty = true; updateMinimap();
+}
+
+/* ============ 航线显隐 ============ */
+var laneForced = false, laneBtn;
+function setLanes(on){
+  document.body.classList.toggle('lanes-on', !!on);
+  if (laneBtn) laneBtn.classList.toggle('active', !!on);
+}
+function autoLanes(){
+  if (laneForced){ setLanes(true); return; }
+  var n = currentId ? NODES[currentId] : null;
+  setLanes(!!(n && ((n.crossIds && n.crossIds.length) || (n.manualIds && n.manualIds.length)) && laneBtn));
+}
+
+/* ============ 面板 ============ */
+var panel, pbody, crumbEl, currentId = null, historyStack = [];
+function renderLecture(txt){
+  return txt.replace(new RegExp('<t>(.+?)</t>','g'), '<span class="term" data-term="$1">$1</span>');
+}
+function openNode(id, push){
+  var n = NODES[id];
+  if (!n) return;
+  var fresh = !n.visited;
+  if (push !== false && currentId && currentId !== id) historyStack.push(currentId);
+  currentId = id;
+  n.visited = true;
+  if (n.el) n.el.classList.add('visited');
+
+  var lines = linksSvg.querySelectorAll('line');
+  for (var i=0;i<lines.length;i++){
+    var pid = lines[i].dataset.id.split('_');
+    lines[i].classList.toggle('hot', pid[0] === id || pid[1] === id);
+  }
+
+  var cl = CLUSTERS[n.cluster];
+  if ((LIVE || DIRECT) && !LECTURES[n.id]){ renderLive(n, cl); autoLanes(); refreshVisibility(); if (panelTab === 'cards') showCards(); return; }
+  var ct = LECTURES[n.id] || contentOf(n.label, cl.name);
+  var crumb = [], cur = n;
+  while (cur){ crumb.unshift(shortLabel(cur.label, 14)); cur = cur.parentId ? NODES[cur.parentId] : null; }
+  crumbEl.textContent = crumb.join('  ›  ');
+
+  var html = '';
+  if (n.kind === 'fact') html += '<div class="badge qb factb">事实 · 一句话就够</div>';
+  else if (n.kind === 'question') html += '<div class="badge qb">' + (n.parentId ? '你的追问' : '问题原点') + '</div>';
+  else html += '<div class="badge">' + (n.rel || '概念') + (n.why ? ' · ' + n.why : '') + '</div>';
+  if (n.parentId && NODES[n.parentId]){
+    html += '<p class="fromline">你是从「' + shortLabel(NODES[n.parentId].label, 14) + '」这条路过来的' + (n.why ? ' · 重点在于：' + n.why : '') + '</p>';
+  }
+  html += '<h2>' + n.label + '</h2>';
+  if (n.kind === 'fact' && ct.fact) {
+    html += '<div class="factbox"><b>答案</b><div class="fans">' + renderLecture(ct.fact) + '</div>'
+          + '<div class="fnote">这是一句话的事实 —— 想弄懂它为什么是这样，按下面的按钮，同一格会重新长成一份讲义。</div></div>';
+  } else {
+    html += '<p class="summary">' + ct.s + '</p>';
+  }
+  if (!n.parentId && cl.aliases && cl.aliases.length){
+    html += '<p class="aliasline">你也可以这样问它：' + cl.aliases.join('　·　') + '</p>';
+  }
+  html += '<div class="lecture">';
+  if (ct.insight){
+    html += '<div class="rv insight"><b>一句话洞察</b>'
+          + (ct.common ? '<span class="isk">' + renderLecture(ct.common) + '</span>' : '')
+          + renderLecture(ct.insight) + '</div>';
+    if (ct.list && ct.list.length){
+      html += '<div class="sec rv lstsec"><div class="sech">清单</div><ul class="lstset">';
+      for (var li2=0; li2<ct.list.length; li2++) html += '<li><b>' + renderLecture(ct.list[li2].item) + '</b>' + (ct.list[li2].why ? '<span class="lstwhy">' + renderLecture(ct.list[li2].why) + '</span>' : '') + '</li>';
+      html += '</ul></div>';
+    }
+    if (ct.scene) html += '<div class="sec rv"><div class="sech">画面</div><p>' + renderLecture(ct.scene) + '</p></div>';
+    if (ct.mechanism){
+      html += '<div class="sec rv"><div class="sech">它是怎么工作的</div>';
+      for (var m=0;m<ct.mechanism.length;m++) html += '<p>' + renderLecture(ct.mechanism[m]) + '</p>';
+      html += '</div>';
+    }
+    if (ct.formula){
+      html += '<div class="fbox rv">';
+      html += '<div class="tex" data-tex="' + ct.formula.tex + '">' + ct.formula.tex + '</div>';
+      if (ct.formula.read) html += '<div class="fread">读作：' + ct.formula.read + '</div>';
+      if (ct.formula.symbols) for (var fi=0;fi<ct.formula.symbols.length;fi++) html += '<div class="fsym"><b>' + ct.formula.symbols[fi][0] + '</b>' + ct.formula.symbols[fi][1] + '</div>';
+      if (ct.formula.example) html += '<div class="fex">' + ct.formula.example + '</div>';
+      html += '</div>';
+    }
+    if (ct.bounds) html += '<div class="sec rv"><div class="sech">它在什么时候失效</div><p>' + renderLecture(ct.bounds) + '</p></div>';
+    if (ct.misconceptions){
+      html += '<div class="sec rv"><div class="sech">常见误解</div>';
+      for (var mi=0;mi<ct.misconceptions.length;mi++) html += '<p>' + renderLecture(ct.misconceptions[mi]) + '</p>';
+      html += '</div>';
+    }
+  } else {
+    for (var p=0;p<ct.p.length;p++) html += '<p class="rv">' + renderLecture(ct.p[p]) + '</p>';
+  }
+  html += '</div>';
+
+  if (n.children.length){
+    html += '<div class="kickerline">继续往下钻</div><div class="drills">';
+    for (var c=0;c<n.children.length;c++){
+      var ch = NODES[n.children[c]];
+      if (ch.question) html += '<button class="asks" data-go="' + ch.id + '"><span class="askq">' + ch.question + '</span><span class="askc">' + shortLabel(ch.label, 12) + '</span></button>';
+      else html += '<button data-go="' + ch.id + '">' + shortLabel(ch.label, 12) + '</button>';
+    }
+    html += '</div>';
+  } else {
+    if (n.kind !== 'fact') html += '<div class="kickerline">已经钻到底了 · 这里可以继续向 AI 追问</div>';
+  }
+
+  if (n.manualIds && n.manualIds.length){
+    html += '<div class="kickerline">你手动连上的</div>';
+    html += '<p class="lanenote">这些是你在航线模式里亲手连起来的 —— AI 没看到的关系，你看到了。</p>';
+    html += '<div class="drills">';
+    for (var mq=0; mq<n.manualIds.length; mq++){
+      var mo = NODES[n.manualIds[mq]];
+      if (!mo) continue;
+      html += '<button class="lane" data-jump="' + mo.id + '">⌁ ' + shortLabel(mo.label, 12) + '</button>';
+    }
+    html += '</div>';
+  }
+
+  if (n.crossIds && n.crossIds.length){
+    var seen = {};
+    html += '<div class="kickerline">同一个概念，也出现在</div>';
+    html += '<p class="lanenote">它在这里是一个投影。另一个问题也把同一个概念拽了出来 —— 两个问题因此有了关系。</p>';
+    html += '<div class="drills">';
+    for (var q=0;q<n.crossIds.length;q++){
+      var o = NODES[n.crossIds[q]];
+      if (!o) continue;
+      var oc = CLUSTERS[o.cluster];
+      if (seen[oc.id]) continue;
+      seen[oc.id] = 1;
+      html += '<button class="lane" data-jump="' + o.id + '">✦ ' + shortLabel(oc.name, 12) + '</button>';
+    }
+    html += '</div>';
+  }
+
+  pbody.innerHTML = html;
+  pbody.scrollTop = 0;
+  panel.classList.add('open');
+  if (n.kind === 'fact' && ct.fact) appendUpgrade(pbody, n);
+  renderMath(pbody);
+
+  var ps = pbody.querySelectorAll('.rv');
+  if (fresh){
+    var qi = 0;
+    (function nextP(){
+      if (qi >= ps.length) return;
+      ps[qi].classList.add('on'); qi++;
+      setTimeout(nextP, 145);
+    })();
+  } else {
+    for (var pi=0; pi<ps.length; pi++) ps[pi].classList.add('on');
+  }
+
+  pbody.querySelectorAll('.term').forEach(function(t){
+    t.addEventListener('click', function(){ drill(this.dataset.term, id); });
+  });
+  pbody.querySelectorAll('[data-go]').forEach(function(t){
+    t.addEventListener('click', function(){
+      openNode(this.dataset.go);
+      focusNode(this.dataset.go, Math.max(V.k, 1.0));
+      pulse(this.dataset.go);
+    });
+  });
+  pbody.querySelectorAll('[data-jump]').forEach(function(t){
+    t.addEventListener('click', function(){
+      var oid = this.dataset.jump;
+      openNode(oid);
+      focusNode(oid, Math.max(V.k, 0.9));
+      pulse(oid);
+    });
+  });
+  autoLanes();
+  refreshVisibility();
+  updateTabCount(cardsFor(n).length);
+  if (panelTab === 'cards') showCards();
+  scheduleSave();
+}
+function pulse(id){
+  var n = NODES[id];
+  if (!n || !n.el) return;
+  n.el.classList.remove('pulse'); void n.el.offsetWidth; n.el.classList.add('pulse');
+}
+function drill(term, fromId){
+  var from = NODES[fromId];
+  var cl = CLUSTERS[from.cluster];
+
+  var list = INDEX[term] || [];
+  for (var i=0;i<list.length;i++){
+    var o = NODES[list[i]];
+    if (!o || o.kind !== 'concept') continue;
+    if (o.cluster === cl.id){ openNode(o.id); focusNode(o.id, Math.max(V.k,1.0)); pulse(o.id); return; }
+  }
+
+  var specs = childrenOf(term);
+  if (!specs.length) specs = [ KNOWN[term] || [term, '延伸', '顺着这个词继续往下'] ];
+  var a = from.parentId
+    ? Math.atan2(from.y - cl.cy, from.x - cl.cx) + (from.children.length) * 0.9 - 0.9
+    : -Math.PI/2 + from.children.length * 2.399;
+  var r = from.parentId ? 150 : 210;
+  var node = makeNode(cl, from, term, specs[0][1] || '相关', specs[0][2] || '从这里继续深入',
+    from.x + Math.cos(a)*r, from.y + Math.sin(a)*r);
+  EDGES.push({a:from.id, b:node.id, cluster:cl.id});
+  var before = EDGES.length;
+  linkCross(node);
+  var madeLane = EDGES.length > before;
+  mount();
+  relayoutNode(from.id, true);
+  revealNode(node.id, 60);
+  openNode(node.id);
+  pulse(node.id);
+  if (madeLane){
+    redrawEdges();
+    showToast('两个问题拽出了同一个概念 · 已连上航线');
+  }
+}
+
+/* ============ 提示 ============ */
+var toastEl, toastTimer = null, toastAction = null;
+function showToast(msg, actLabel, actFn){
+  if (!toastEl) return;
+  toastAction = (actLabel && actFn) ? actFn : null;
+  toastEl.innerHTML = '';
+  var _s = document.createElement('span'); _s.textContent = msg; toastEl.appendChild(_s);
+  if (toastAction){
+    var _b = document.createElement('button'); _b.className = 'tact'; _b.textContent = actLabel;
+    _b.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      var f = toastAction; toastAction = null;
+      toastEl.classList.remove('on');
+      if (f) f();
+    });
+    toastEl.appendChild(_b);
+  }
+  toastEl.classList.toggle('act', !!toastAction);
+  toastEl.classList.add('on');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ toastEl.classList.remove('on'); toastAction = null; }, toastAction ? 7000 : 2600);
+}
+
+/* ============ 拖动 / 缩放 ============ */
+var cdrag = null, suppressClick = false, onClusterDrop = null;
+function startClusterDrag(clusterId, ev){
+  var cl = CLUSTERS[clusterId];
+  cdrag = { id:clusterId, sx:ev.clientX, sy:ev.clientY, ocx:cl.cx, ocy:cl.cy, moved:false };
+  document.body.style.cursor = 'grabbing';
+}
+function moveCluster(cid, nx, ny){
+  var cl = CLUSTERS[cid];
+  var dx = nx - cl.cx, dy = ny - cl.cy;
+  for (var i=0;i<cl.nodeIds.length;i++){
+    var n = NODES[cl.nodeIds[i]];
+    if (!n) continue;
+    n.x += dx; n.y += dy;
+    if (n.el){ n.el.style.left = n.x + 'px'; n.el.style.top = n.y + 'px'; }
+  }
+  cl.cx = nx; cl.cy = ny;
+  if (cl.labelEl){ cl.labelEl.style.left = nx + 'px'; cl.labelEl.style.top = (ny - 300) + 'px'; }
+  mmDirty = true;
+  redrawEdges(); updateMinimap();
+  scheduleSave();
+}
+function bindViewport(){
+  var dragging = false, moved = false, sx=0, sy=0, ox=0, oy=0;
+  viewport.addEventListener('mousedown', function(e){
+    dragging = true; moved = false; sx = e.clientX; sy = e.clientY; ox = V.px; oy = V.py;
+    viewport.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', function(e){
+    if (cdrag){
+      var ddx = (e.clientX - cdrag.sx)/V.k, ddy = (e.clientY - cdrag.sy)/V.k;
+      if (Math.abs(ddx) > 3 || Math.abs(ddy) > 3) cdrag.moved = true;
+      if (cdrag.moved) moveClusterSoon(cdrag.id, cdrag.ocx + ddx, cdrag.ocy + ddy);
+      return;
+    }
+    if (!dragging) return;
+    var dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+    V.px = ox + dx; V.py = oy + dy; applySoon();
+  });
+  window.addEventListener('mouseup', function(){
+    if (cdrag){
+      var draggedId = cdrag.id, didMove = cdrag.moved;
+      if (_dragQueued && _dragQ){ _dragQueued = false; var _q = _dragQ; _dragQ = null; moveCluster(_q.cid, _q.nx, _q.ny); }
+      if (didMove) suppressClick = true;
+      cdrag = null; document.body.style.cursor = '';
+      if (didMove && onClusterDrop) onClusterDrop(draggedId);
+      return;
+    }
+    if (!dragging) return;
+    dragging = false;
+    viewport.classList.remove('dragging');
+    if (!moved){ panel.classList.remove('open'); currentId = null; autoLanes(); refreshVisibility(); }
+  });
+  var zoomTimer = null;
+  viewport.addEventListener('wheel', function(e){
+    e.preventDefault();
+    document.body.classList.add('zooming');
+    if (zoomTimer) clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(function(){ document.body.classList.remove('zooming'); }, 160);
+    var rect = viewport.getBoundingClientRect();
+    var mxp = e.clientX - rect.left, myp = e.clientY - rect.top;
+    var wx = (mxp - V.px)/V.k, wy = (myp - V.py)/V.k;
+    var k2 = clamp(V.k * (e.deltaY < 0 ? 1.13 : 1/1.13), 0.2, 2.6);
+    V.px = mxp - wx*k2; V.py = myp - wy*k2; V.k = k2;
+    applySoon();
+  }, {passive:false});
+}
+function bindMinimap(){
+  minimap.addEventListener('mousedown', function(e){
+    e.stopPropagation();
+    var g = mmGeo(), b = g.b, s = g.s;
+    var rect = minimap.getBoundingClientRect();
+    var wx = (e.clientX - rect.left - g.offx)/s + b.minX;
+    var wy = (e.clientY - rect.top  - g.offy)/s + b.minY;
+    setView(wx, wy, V.k, true);
+  });
+}
+
+/* ============ 菜单 ============ */
+function buildMenu(){
+  var out = '<div class="cap">我问过的问题</div>';
+  for (var cid in CLUSTERS){
+    var cl = CLUSTERS[cid];
+    out += '<button class="item" data-cluster="' + cid + '"><span><span class="cdot" style="background:hsl(' + cl.hue + ',70%,70%)"></span>' + shortLabel(cl.name, 18) + '</span><span class="meta">' + cl.nodeIds.length + ' 节点</span></button>';
+  }
+  out += '<div class="sep"></div>';
+  out += '<button class="item" data-act="fit"><span>回到全景</span><span class="meta">看整个宇宙</span></button>';
+  var menu = document.getElementById('menu');
+  menu.innerHTML = out;
+  menu.querySelectorAll('[data-cluster]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var cl = CLUSTERS[this.dataset.cluster];
+      setView(cl.cx, cl.cy, 0.95, true);
+      menu.classList.remove('open');
+    });
+  });
+  menu.querySelector('[data-act="fit"]').addEventListener('click', function(){
+    fitAll(); menu.classList.remove('open');
+  });
+}
+
+/* ============ 用户追问 ============ */
+function askFollow(){
+  var inp = document.getElementById('followInput');
+  if (!inp) return;
+  var q = (inp.value || '').trim();
+  if (!q || !currentId) return;
+  var from = NODES[currentId];
+  if (!from) return;
+  var cl = CLUSTERS[from.cluster];
+  inp.value = '';
+
+  var a = -Math.PI/2 + from.children.length * 2.399;
+  var r = from.parentId ? 178 : 245;
+  var node = makeNode(cl, from, q, '追问', '由你提出', from.x + Math.cos(a)*r, from.y + Math.sin(a)*r);
+  node.kind = 'question';
+  EDGES.push({ a:from.id, b:node.id, cluster:cl.id });
+
+  if (!LIVE && !DIRECT) LECTURES[node.id] = {
+    s: '这是你在「' + from.label + '」这里提出的追问。',
+    insight: '（原型占位）正式版里，这里会是 AI 针对你这个问题写的一段回答 —— 它同样要先给画面、再给洞察，而且不许用别的概念来定义。',
+    scene: '你问的是：「' + q + '」。正式版里，回答会从一个不依赖任何专业词的画面开始。',
+    mechanism: ['追问和点击子概念，是两条不同的路：点 AI 给的子概念，是顺着知识的结构走；自己追问，是顺着你的困惑走。',
+                '两条路都会在星图上留下节点 —— 但问题节点是圆角矩形，一眼认得出，它们是你自己的，不是 AI 派给你的。'],
+    bounds: '如果同一个概念下面反复冒出同一类追问，那说明这个概念的讲义没讲清楚 —— 这会成为回头优化讲义的信号。'
+  };
+
+  mount();
+  relayoutNode(from.id, true);
+  revealNode(node.id, 60);
+  openNode(node.id);
+  pulse(node.id);
+  showToast('你的追问已经长成星图上的一个节点');
+}
+
+/* ============ 公式渲染 ============ */
+function renderMath(scope){
+  var els = scope.querySelectorAll('.tex');
+  for (var i=0;i<els.length;i++){
+    var tex = els[i].getAttribute('data-tex') || '';
+    if (window.katex){
+      try { window.katex.render(tex, els[i], { throwOnError:false, displayMode:true }); }
+      catch (e) { els[i].textContent = tex; }
+    } else {
+      els[i].textContent = tex;
+      els[i].style.fontFamily = 'ui-monospace,Consolas,monospace';
+      els[i].style.fontSize = '16px';
+    }
+  }
+}
+
+/* ============ 合并两个星团 ============ */
+function recolorNode(n, hue){
+  if (!n.el) return;
+  n.el.style.setProperty('--h', String(hue));   /* 配色由 CSS 依据 --h 现算，这里只改色相 */
+}
+function removeNode(id){
+  var n = NODES[id];
+  if (!n) return;
+  if (n.el && n.el.parentNode) n.el.parentNode.removeChild(n.el);
+  for (var i=EDGES.length-1;i>=0;i--){
+    var e = EDGES[i];
+    if (e.a === id || e.b === id){
+      if (e.el && e.el.parentNode) e.el.parentNode.removeChild(e.el);
+      EDGES.splice(i,1);
+    }
+  }
+  if (n.parentId && NODES[n.parentId]){
+    var pc = NODES[n.parentId].children, idx = pc.indexOf(id);
+    if (idx >= 0) pc.splice(idx,1);
+  }
+  if (INDEX[n.label]){
+    var k = INDEX[n.label].indexOf(id);
+    if (k >= 0) INDEX[n.label].splice(k,1);
+  }
+  for (var m in NODES){
+    if (NODES[m].crossIds){
+      var p = NODES[m].crossIds.indexOf(id);
+      if (p >= 0) NODES[m].crossIds.splice(p,1);
+    }
+    if (NODES[m].manualIds){
+      var pm = NODES[m].manualIds.indexOf(id);
+      if (pm >= 0) NODES[m].manualIds.splice(pm,1);
+    }
+  }
+  /* 必须同时从所属星团的名单里抹掉。以前只删 NODES 不删 nodeIds，留下一个死 id：
+     之后拖这个星团，moveCluster 每帧都会去读 undefined.x 并抛异常（一屏的红报错）。 */
+  var _cl0 = CLUSTERS[n.cluster];
+  if (_cl0 && _cl0.nodeIds){
+    var _k0 = _cl0.nodeIds.indexOf(id);
+    if (_k0 >= 0) _cl0.nodeIds.splice(_k0, 1);
+    if (_cl0.rootId === id) _cl0.rootId = null;
+  }
+  delete NODES[id];
+}
+/* ---------- 删除 ---------- */
+var askDeleteHook = null;   /* UI 层注入：弹确认卡 */
+function subtreeIds(rootId){
+  var out = [], stack = [rootId];
+  while (stack.length){
+    var id = stack.pop(), n = NODES[id];
+    if (!n) continue;
+    out.push(id);
+    for (var i=0;i<n.children.length;i++) stack.push(n.children[i]);
+  }
+  return out;
+}
+/* 概念节点 → 连它下游一起删；问题原点 → 整个星团都删 */
+function deleteNodeAt(id){
+  var n = NODES[id];
+  if (!n) return { n:0, cluster:false };
+  pushUndo('删除「' + shortLabel(n.label, 10) + '」' + (n.parentId ? '' : '整个问题'));
+  var clusterId = n.cluster, wholeCluster = !n.parentId, cl = CLUSTERS[clusterId];
+  var ids = (wholeCluster && cl) ? cl.nodeIds.slice() : subtreeIds(id);
+  var gone = 0;
+  for (var i=0;i<ids.length;i++){
+    if (!NODES[ids[i]]) continue;
+    delete LECTURES[ids[i]];
+    removeNode(ids[i]);
+    gone++;
+  }
+  var hist = [];
+  for (var h=0;h<historyStack.length;h++) if (NODES[historyStack[h]]) hist.push(historyStack[h]);
+  historyStack = hist;
+  if (!currentId || !NODES[currentId]){ panel.classList.remove('open'); currentId = null; }
+  if (wholeCluster && CLUSTERS[clusterId]){
+    if (CLUSTERS[clusterId].labelEl && CLUSTERS[clusterId].labelEl.parentNode) CLUSTERS[clusterId].labelEl.parentNode.removeChild(CLUSTERS[clusterId].labelEl);
+    delete CLUSTERS[clusterId];
+  }
+  return { n: gone, cluster: !!wholeCluster };
+}
+/* ---------- 撤销：合并 / 删除是唯二不可逆的操作，动手前先存一份完整快照 ---------- */
+var undoStack = [], UNDO_CAP = 8;
+function pushUndo(label){
+  try { undoStack.push({ label: label, st: JSON.stringify(buildPayload()) }); } catch (e) {}
+  while (undoStack.length > UNDO_CAP) undoStack.shift();
+}
+function clearWorldDom(){
+  var kill = world.querySelectorAll('.node,.clabel');
+  for (var i=0;i<kill.length;i++) if (kill[i].parentNode) kill[i].parentNode.removeChild(kill[i]);
+  while (linksSvg.firstChild) linksSvg.removeChild(linksSvg.firstChild);
+}
+function undoLast(){
+  if (!undoStack.length){ showToast('没有可以撤销的操作'); return; }
+  var u = undoStack.pop();
+  try {
+    var st = JSON.parse(u.st);
+    clearWorldDom();
+    restoreState(st);
+    LECTURES = {};
+    panel.classList.remove('open'); currentId = null;
+    mount(); updateMinimap(); buildMenu(); layoutAll(false);
+    for (var k in NODES){ var nn = NODES[k]; if (nn.el) nn.el.classList.add('show'); }
+    scheduleSave();
+    showToast('已撤销：' + u.label);
+  } catch (e){ showToast('撤销失败：' + (e && e.message ? e.message : e)); }
+}
+
+/* 合并 = 让两个问题都留着，再为「它们之间的关系」单独生一个节点当新根。
+   旧做法是删掉源星团的根、把孩子挂到对方根下 —— 那样用户问过的那个问题本身消失了，
+   和「把不懂可视化」正好相反。 */
+function bridgeHue(h1, h2){
+  var d = (((h2 - h1) % 360) + 540) % 360 - 180;   /* 最短弧，落在 -180..180 */
+  return ((h1 + d/2) % 360 + 360) % 360;
+}
+var bridgeSeq = 0;
+function mergeCluster(srcId, dstId){
+  var src = CLUSTERS[srcId], dst = CLUSTERS[dstId];
+  if (!src || !dst || src === dst) return;
+  var srcRoot = NODES[src.rootId], dstRoot = NODES[dst.rootId];
+  if (!srcRoot || !dstRoot) return;
+
+  pushUndo('合并「' + shortLabel(src.name, 10) + '」和「' + shortLabel(dst.name, 10) + '」');
+
+  var nameA = src.name, nameB = dst.name;
+  if (dst.aliases.indexOf(src.name) < 0) dst.aliases.push(src.name);
+  for (var a=0;a<src.aliases.length;a++) if (dst.aliases.indexOf(src.aliases[a]) < 0) dst.aliases.push(src.aliases[a]);
+
+  var bh = bridgeHue(src.hue, dst.hue);
+  var bridge = { id:'b' + (++bridgeSeq) + '-' + Date.now().toString(36), cluster:dst.id, parentId:null,
+                 kind:'bridge', label:'「' + shortLabel(nameA, 7) + '」的关系「' + shortLabel(nameB, 7) + '」',
+                 rel:'关系', why:'', question:'',
+                 x:(srcRoot.x + dstRoot.x)/2, y:(srcRoot.y + dstRoot.y)/2,
+                 visited:false, children:[srcRoot.id, dstRoot.id], crossIds:[], manualIds:[] };
+  NODES[bridge.id] = bridge;
+  indexAdd(bridge);
+
+  srcRoot.parentId = bridge.id;
+  dstRoot.parentId = bridge.id;
+  EDGES.push({ a:bridge.id, b:srcRoot.id, cluster:dst.id });
+  EDGES.push({ a:bridge.id, b:dstRoot.id, cluster:dst.id });
+
+  for (var j=0;j<src.nodeIds.length;j++){
+    var id = src.nodeIds[j];
+    if (!NODES[id]) continue;
+    NODES[id].cluster = dst.id;
+    dst.nodeIds.push(id);
+  }
+  dst.nodeIds.push(bridge.id);
+  for (var r=0;r<dst.nodeIds.length;r++){ var rn = NODES[dst.nodeIds[r]]; if (rn) recolorNode(rn, bh); }
+
+  if (src.labelEl && src.labelEl.parentNode) src.labelEl.parentNode.removeChild(src.labelEl);
+  delete CLUSTERS[srcId];
+
+  dst.rootId = bridge.id;
+  dst.hue = bh;
+  dst.name = shortLabel(nameA, 9) + ' ⇄ ' + shortLabel(nameB, 9);
+  if (dst.labelEl) dst.labelEl.textContent = dst.name;
+
+  mount(); updateMinimap(); buildMenu();
+  relayoutCluster(dst);
+  scheduleSave();
+  showToast('两个问题连起来了 · 正在让它俩的关系有个名字', '撤销', undoLast);
+
+  /* 关系本身也要讲：把桥当普通节点打开，走的是服务端的「关系讲义」分支 */
+  if (LIVE || DIRECT) openNode(bridge.id);
+}
+
+/* 合并后重排：把根的一圈子节点均匀铺开，整棵子树跟着平移 */
+var tweenToken = 0;
+function tweenPositions(moves, dur){
+  var my = ++tweenToken;          /* 新补间一开，旧补间自动停，避免互相打架 */
+  var t0 = performance.now();
+  var ids = {};                   /* 只动这些节点：边、星团名、小地图圆点都按这个集合筛 */
+  for (var q=0;q<moves.length;q++) ids[moves[q].node.id] = 1;
+  function step(t){
+    if (my !== tweenToken) return;
+    var p = Math.min(1, (t - t0)/dur), e = 1 - Math.pow(1-p, 3);
+    for (var i=0;i<moves.length;i++){
+      var m = moves[i];
+      m.node.x = m.fx + (m.tx - m.fx)*e;
+      m.node.y = m.fy + (m.ty - m.fy)*e;
+      if (m.node.el){ m.node.el.style.left = m.node.x + 'px'; m.node.el.style.top = m.node.y + 'px'; }
+    }
+    syncLabels(ids); redrawEdges(ids); mmMoveOnly(moves);
+    if (p < 1) requestAnimationFrame(step);
+    else { mmDirty = true; updateMinimap(); }   /* 收尾时把整张小地图对齐一次 */
+  }
+  requestAnimationFrame(step);
+}
+function syncLabels(only){
+  for (var cid in CLUSTERS){
+    var cl = CLUSTERS[cid], rt = NODES[cl.rootId];
+    if (cl.labelEl && rt){
+      if (only && !only[rt.id]) continue;
+      cl.labelEl.style.left = rt.x + 'px'; cl.labelEl.style.top = (rt.y - 300) + 'px';
+    }
+  }
+}
+/* 全局布局：每个星团按径向树铺开，再把互相重叠的星团推开，最后一次性补间 */
+/* DEPTH_POW > 1：越深的层半径长得越快。第 1 层仍是 212px，第 2 层 540、第 3 层 935 ——
+   同一层上的节点是按叶子数均分一圈的，半径不涨、叶子一多就压字。
+   CLUSTER_CAP 是"一个星团聚到多大就不再涨"的安全阀，太小会把大星团整体压扁（节点盒子不会跟着缩）。 */
+var LAYOUT_R = 212, CLUSTER_CAP = 1180, GAP = 150, DEPTH_POW = 1.35;
+function layoutAll(animate, onlyId){
+  var plan = [], all = [], cnt = {}, off = {};
+  for (var cid in CLUSTERS){
+    var cl = CLUSTERS[cid];
+    var root = NODES[cl.rootId];
+    if (!root) continue;
+    all.push(cl);
+    /* onlyId：只重排那一个星团。别的星团聚用上次算好的偏移、原地不动 ——
+       加一个概念不该让几百个节点一起动。 */
+    if (onlyId && cid !== onlyId && cl._off) continue;
+    cnt = {}; off = {};
+    (function calc(n){
+      var c = 0;
+      for (var i=0;i<n.children.length;i++){ var k = NODES[n.children[i]]; if (k) c += calc(k); }
+      if (c === 0) c = 1;
+      cnt[n.id] = c; return c;
+    })(root);
+    (function place(n, a0, a1, depth, sib){
+      if (depth > 0){
+        var a = (a0 + a1)/2;
+        var r = LAYOUT_R * Math.pow(depth, DEPTH_POW) + (sib % 2) * 34;
+        off[n.id] = { dx: Math.cos(a)*r, dy: Math.sin(a)*r };
+      }
+      var kids = [];
+      for (var i=0;i<n.children.length;i++){ var k = NODES[n.children[i]]; if (k) kids.push(k); }
+      if (!kids.length) return;
+      var total = 0;
+      for (var i=0;i<kids.length;i++) total += cnt[kids[i].id];
+      var cur = a0, span = a1 - a0;
+      for (var i=0;i<kids.length;i++){
+        var share = span * (cnt[kids[i].id] / total);
+        place(kids[i], cur, cur + share, depth + 1, i);
+        cur += share;
+      }
+    })(root, -Math.PI/2, -Math.PI/2 + 2*Math.PI, 0, 0);
+    /* 算这个星团的实际半径；太深就整体缩一点，别让一个星团无限膨胀 */
+    var maxR = 340;
+    for (var nid in off){
+      var nn = NODES[nid];
+      if (!nn) continue;
+      var rr = Math.sqrt(off[nid].dx*off[nid].dx + off[nid].dy*off[nid].dy) + nn.label.length * 7 + 44;
+      if (rr > maxR) maxR = rr;
+    }
+    if (maxR > CLUSTER_CAP){
+      var k2 = CLUSTER_CAP / maxR;
+      for (var nid2 in off){ off[nid2].dx *= k2; off[nid2].dy *= k2; }
+      maxR = CLUSTER_CAP;
+    }
+    cl._off = off; cl._radius = maxR;
+    plan.push(cl);
+  }
+  /* 只推开真正重叠的星团。都动的时候两边各让一半；
+     指定 onlyId 时只有那一个让位（另一个当墙），否则"只补间变化的星团"就无从谈起。 */
+  for (var iter=0; iter<90; iter++){
+    var moved = false;
+    for (var i=0;i<all.length;i++){
+      for (var j=i+1;j<all.length;j++){
+        var A = all[i], B = all[j];
+        if (onlyId && A.id !== onlyId && B.id !== onlyId) continue;
+        var dx = B.cx - A.cx, dy = B.cy - A.cy;
+        var d = Math.sqrt(dx*dx + dy*dy) || 0.01;
+        var need = A._radius + B._radius + GAP;
+        if (d < need){
+          var push = need - d, ux = dx/d, uy = dy/d;
+          if (onlyId && A.id === onlyId){ A.cx -= ux*push; A.cy -= uy*push; }
+          else if (onlyId && B.id === onlyId){ B.cx += ux*push; B.cy += uy*push; }
+          else { push /= 2; A.cx -= ux*push; A.cy -= uy*push; B.cx += ux*push; B.cy += uy*push; }
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  /* 汇总成一次补间 */
+  var moves = [];
+  for (var p=0;p<plan.length;p++){
+    var cl2 = plan[p], root2 = NODES[cl2.rootId];
+    moves.push({ node: root2, fx: root2.x, fy: root2.y, tx: cl2.cx, ty: cl2.cy });
+    for (var nid3 in cl2._off){
+      var n3 = NODES[nid3];
+      if (!n3) continue;
+      moves.push({ node: n3, fx: n3.x, fy: n3.y, tx: cl2.cx + cl2._off[nid3].dx, ty: cl2.cy + cl2._off[nid3].dy });
+    }
+  }
+  if (!moves.length) return;
+  if (animate === false){
+    for (var m=0;m<moves.length;m++){
+      moves[m].node.x = moves[m].tx; moves[m].node.y = moves[m].ty;
+      if (moves[m].node.el){ moves[m].node.el.style.left = moves[m].node.x + 'px'; moves[m].node.el.style.top = moves[m].node.y + 'px'; }
+    }
+    mmDirty = true;
+    syncLabels(); redrawEdges(); updateMinimap();
+  } else {
+    tweenPositions(moves, 640);
+  }
+}
+function relayoutCluster(cl, animate){ layoutAll(animate, cl && cl.id); }
+function relayoutNode(parentId, animate){ var _p = NODES[parentId]; layoutAll(animate, _p ? _p.cluster : null); }
+
+/* ============ 持久化：全量快照 + 防抖 ============ */
+function restoreState(st){
+  CLUSTERS = {}; NODES = {}; EDGES = []; INDEX = {}; mmDots = {};
+  for (var i=0;i<st.clusters.length;i++){
+    var c = st.clusters[i];
+    var aliases = [];
+    if (Object.prototype.toString.call(c.aliases) === '[object Array]') aliases = c.aliases.slice();
+    else if (c.aliases){ try { aliases = JSON.parse(c.aliases) || []; } catch (e) { aliases = []; } }
+    CLUSTERS[c.id] = { id:c.id, name:c.name, cx:c.cx, cy:c.cy, hue:c.hue, nodeIds:[], aliases:aliases, rootId:null };
+  }
+  for (var j=0;j<st.nodes.length;j++){
+    var r = st.nodes[j];
+    /* 兼容两种命名：服务端 sqlite 返回 snake_case，浏览器直连写出来的存档是 camelCase。
+       以前只认 snake_case —— 双击打开时恢复出来的节点 cluster=undefined，
+       mount() 去读 CLUSTERS[undefined].hue 直接抛异常，整个页面永远卡在首页。 */
+    var _cid = (r.cluster_id != null) ? r.cluster_id : r.clusterId;
+    var _pid = (r.parent_id  != null) ? r.parent_id  : r.parentId;
+    var n = { id:r.id, kind:r.kind, label:r.label, cluster:_cid, parentId:_pid,
+              x:r.x, y:r.y, rel:r.rel, why:r.why, question:r.question, visited:!!r.visited,
+              children:[], crossIds:[], manualIds:[] };
+    NODES[n.id] = n;
+    var cl = CLUSTERS[n.cluster];
+    if (!cl){ delete NODES[n.id]; continue; }   /* 指向一个已经不存在的问题：丢掉它，别让它把整个应用拖下水 */
+    cl.nodeIds.push(n.id); if (!n.parentId) cl.rootId = n.id;
+    if (n.parentId && NODES[n.parentId]) NODES[n.parentId].children.push(n.id);
+    indexAdd(n);
+  }
+  for (var k=0;k<st.edges.length;k++){
+    var e = st.edges[k];
+    var ed = { a:e.a, b:e.b, cluster:(e.cluster_id != null ? e.cluster_id : e.clusterId) };
+    if (e.cross) ed.cross = true;
+    if (e.manual){ ed.manual = true; if (NODES[e.a]) NODES[e.a].manualIds.push(e.b); if (NODES[e.b]) NODES[e.b].manualIds.push(e.a); }
+    else if (e.cross){ if (NODES[e.a]) NODES[e.a].crossIds.push(e.b); if (NODES[e.b]) NODES[e.b].crossIds.push(e.a); }
+    EDGES.push(ed);
+  }
+  /* 兜底：修父子关系（存档里顺序可能颠倒、父节点可能没了），并清掉两端不全的边 */
+  for (var idp in NODES){ var q0 = NODES[idp]; if (q0.parentId && !NODES[q0.parentId]) q0.parentId = null; }
+  for (var idc in NODES){ NODES[idc].children = []; }
+  for (var idq in NODES){ var w0 = NODES[idq]; if (w0.parentId) NODES[w0.parentId].children.push(idq); }
+  var keepEdges = [];
+  for (var me = 0; me < EDGES.length; me++){
+    var ee = EDGES[me];
+    if (!NODES[ee.a] || !NODES[ee.b]) continue;
+    keepEdges.push(ee);
+  }
+  EDGES = keepEdges;
+  var mx = 0;
+  for (var id in NODES){ if (id.charAt(0) === 'n'){ var v = parseInt(id.slice(1), 10); if (v > mx) mx = v; } }
+  seq = mx;
+}
+var saveTimer = null, saveDirty = false;
+function scheduleSave(){
+  saveDirty = true;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(doSave, 900);
+}
+function buildPayload(){
+  var payload = { clusters: [], nodes: [], edges: [] };
+  for (var cid in CLUSTERS){
+    var c = CLUSTERS[cid];
+    payload.clusters.push({ id:c.id, name:c.name, cx:c.cx, cy:c.cy, hue:c.hue, aliases:c.aliases || [] });
+  }
+  for (var id in NODES){
+    var n = NODES[id];
+    payload.nodes.push({ id:n.id, clusterId:n.cluster, parentId:n.parentId, kind:n.kind, label:n.label,
+                         rel:n.rel, why:n.why, question:n.question, x:n.x, y:n.y, visited:n.visited ? 1 : 0 });
+  }
+  for (var i=0;i<EDGES.length;i++){
+    var e = EDGES[i];
+    payload.edges.push({ a:e.a, b:e.b, clusterId:e.cluster, cross:e.cross ? 1 : 0, manual:e.manual ? 1 : 0 });
+  }
+  return payload;
+}
+function doSave(){
+  if (!saveDirty) return;
+  saveDirty = false;
+  var payload = buildPayload();
+  if (DIRECT){
+    try { localStorage.setItem('starmap.state', JSON.stringify(payload)); }
+    catch (e) { /* 浏览器不给存，那这次的星图就只在本次会话里活着 */ }
+    return;
+  }
+  fetch('/api/state', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(function(){});
+}
+
+/* ============ 实时生成（通过本地服务器时自动开启） ============ */
+function revealClusterNew(cl){
+  var i = 0;
+  for (var k in NODES){
+    var n = NODES[k];
+    if (n.cluster === cl.id && n.el && !n.el.classList.contains('show')){
+      var _dd = i < 28 ? 80 + i * 120 : 80 + 28 * 120 + (i - 28) * 18; i++;
+      (function(el, d){ setTimeout(function(){ el.classList.add('show'); }, d); })(n.el, _dd);
+    }
+  }
+}
+/* 注意：这里曾经有一个 growWithAI()，会在星团创建时先向 /api/seed 要一批子概念。
+   它和"打开节点时从讲义的 ##CHILD 长出子概念"重复，导致同一个节点被挂两次 —— 已删除。
+   现在子节点只有一个来源：讲义。*/
+function liveParse(line){
+  if (line.slice(0, 2) !== '##') return null;
+  var i = line.indexOf(' ');
+  if (i < 0) return null;
+  return { tag: line.slice(2, i), rest: line.slice(i + 1).trim() };
+}
+function paintTex(el, tex){
+  if (window.katex){
+    try { window.katex.render(tex, el, { throwOnError: false, displayMode: true }); return; } catch (e) {}
+  }
+  el.textContent = tex;
+  el.style.fontFamily = 'ui-monospace,Consolas,monospace';
+  el.style.fontSize = '16px';
+}
+function liveSec(box, state, key, title){
+  if (state[key]) return state[key];
+  var d = document.createElement('div'); d.className = 'sec';
+  var h = document.createElement('div'); h.className = 'sech'; h.textContent = title;
+  d.appendChild(h); box.appendChild(d); state[key] = d; return d;
+}
+function livePara(parent, text){
+  var p = document.createElement('p'); p.textContent = text; parent.appendChild(p);
+}
+function liveList(box, state){
+  if (state.listEl) return state.listEl;
+  var d = document.createElement('div'); d.className = 'sec lstsec';
+  var h = document.createElement('div'); h.className = 'sech'; h.textContent = '清单';
+  var ul = document.createElement('ul'); ul.className = 'lstset';
+  d.appendChild(h); d.appendChild(ul);
+  /* 清单必须排在「画面」上面 */
+  var anchor = state.secScene || state.secMech || null;
+  if (anchor && anchor.parentNode === box) box.insertBefore(d, anchor); else box.appendChild(d);
+  state.listEl = { el: d, ul: ul };
+  return state.listEl;
+}
+function liveInsight(box, state){
+  if (state.insightEl) return;
+  var d = document.createElement('div'); d.className = 'insight';
+  var b = document.createElement('b'); b.textContent = '一句话洞察'; d.appendChild(b);
+  state.commonEl = document.createElement('span'); state.commonEl.className = 'isk'; d.appendChild(state.commonEl);
+  state.insightEl = document.createElement('span'); d.appendChild(state.insightEl);
+  box.appendChild(d);
+}
+function liveFbox(box, state){
+  if (state.fbox) return state.fbox;
+  var el = document.createElement('div'); el.className = 'fbox';
+  var tex = document.createElement('div'); tex.className = 'tex'; el.appendChild(tex);
+  box.appendChild(el);
+  state.fbox = { el: el, tex: tex };
+  return state.fbox;
+}
+function liveFact(box, state){
+  if (state.factEl) return state.factEl;
+  var el = document.createElement('div'); el.className = 'factbox';
+  var lb = document.createElement('b'); lb.textContent = '答案'; el.appendChild(lb);
+  var sp = document.createElement('div'); sp.className = 'fans'; el.appendChild(sp);
+  box.appendChild(el);
+  state.factEl = sp;
+  return state.factEl;
+}
+function handleLiveLine(state, line){
+  var p = liveParse(line);
+  if (!p) return;
+  var tag = p.tag, rest = p.rest, box = state.box, d = state.data;
+  if (tag === 'COMMON'){ liveInsight(box, state); state.commonEl.textContent = rest; d.common = rest; }
+  else if (tag === 'INSIGHT'){ liveInsight(box, state); state.insightEl.textContent = rest; d.insight = rest; }
+  else if (tag === 'FACT'){ liveFact(box, state).textContent = rest; d.fact = rest; }
+  else if (tag === 'SCENE'){ livePara(liveSec(box, state, 'secScene', '画面'), rest); d.scene.push(rest); }
+  else if (tag === 'MECH'){ livePara(liveSec(box, state, 'secMech', '它是怎么工作的'), rest); d.mech.push(rest); }
+  else if (tag === 'FORMULA'){ var fb = liveFbox(box, state); fb.tex.setAttribute('data-tex', rest); paintTex(fb.tex, rest); d.formula = { tex: rest, read: '', symbols: [] }; }
+  else if (tag === 'READ'){
+    if (state.fbox && d.formula){
+      var rt = rest;
+      if (rt.slice(0, 3) === '读作：' || rt.slice(0, 3) === '读作:') rt = rt.slice(3).trim();
+      d.formula.read = rt;
+      var r = document.createElement('div'); r.className = 'fread'; r.textContent = '读作：' + rt;
+      state.fbox.el.appendChild(r);
+    }
+  }
+  else if (tag === 'SYM'){
+    if (state.fbox && d.formula){
+      var q = rest.split('|');
+      var a = (q[0] || '').trim(), b = (q[1] || '').trim();
+      d.formula.symbols.push([a, b]);
+      var s = document.createElement('div'); s.className = 'fsym';
+      var bb = document.createElement('b'); bb.textContent = a; s.appendChild(bb);
+      s.appendChild(document.createTextNode(b));
+      state.fbox.el.appendChild(s);
+    }
+  }
+  else if (tag === 'BOUNDS'){ livePara(liveSec(box, state, 'secBounds', '它在什么时候失效'), rest); d.bounds.push(rest); }
+  else if (tag === 'MIS'){ livePara(liveSec(box, state, 'secMis', '常见误解'), rest); d.mis.push(rest); }
+  else if (tag === 'LIST'){
+    var lq = rest.split('|');
+    var item = (lq[0] || '').trim(), why = (lq[1] || '').trim();
+    if (item && d.list.length < 10){
+      d.list.push({ item: item, why: why });
+      var lw = liveList(box, state);
+      var li = document.createElement('li');
+      var ib = document.createElement('b'); ib.textContent = item; li.appendChild(ib);
+      if (why){ var iw = document.createElement('span'); iw.className = 'lstwhy'; iw.textContent = why; li.appendChild(iw); }
+      lw.ul.appendChild(li);
+    }
+  }
+  else if (tag === 'CHILD'){
+    var c = rest.split('|').map(function(s){ return s.trim(); });
+    if (c.length >= 4 && !state.isFact && state.children.length < 4) state.children.push([c[0], c[2], c[3], c[1]]);   /* 事实模式下 ##CHILD 一律忽略：事实是终点 */
+  }
+  else if (tag === 'TITLE'){ state.title = rest; d.title = rest; }
+  else if (tag === 'CHECK'){ state.check = rest; }
+}
+/* 事实是一句话的答案，但「知道」不是终点。这个按钮把同一格从「知道」推进到「懂」：
+   节点从 fact 变回 question，重新按原理模式生成一遍，原来那句事实留在 why 里，不丢。 */
+function appendUpgrade(box, n){
+  if (!box || !n || n.kind !== 'fact') return;
+  var b = document.createElement('button');
+  b.className = 'upgrade';
+  b.innerHTML = '<span>那它为什么会这样</span><span class="ar">→</span>';
+  b.addEventListener('click', function(ev){ ev.stopPropagation(); upgradeFact(n); });
+  box.appendChild(b);
+}
+function upgradeFact(n){
+  if (!n || n.kind !== 'fact') return;
+  var keep = (LECTURES[n.id] && LECTURES[n.id].fact) || n.why || '';
+  n.kind = 'question';
+  if (keep) n.why = keep;
+  delete LECTURES[n.id];                 /* 丢掉事实缓存，让 openNode 重新走 renderLive（这次是原理模式） */
+  if (n.el){
+    n.el.classList.remove('fact');
+    var inner2 = '<span class="qmk">✦</span>' + shortLabel(n.label);
+    if (n.crossIds && n.crossIds.length) inner2 += '<span class="mk">◈</span>';
+    if (n.rel) inner2 += '<span class="rel">' + n.rel + '</span>';
+    n.el.innerHTML = inner2;
+    applyTier(n, n.el);
+  }
+  scheduleSave();
+  openNode(n.id, false);
+  if (typeof showToast === 'function') showToast('这一格从现在起是一个问题');
+}
+function finishLive(n, state, cl){
+  var rb = document.getElementById('regenBtn');
+  if (rb) rb.classList.remove('spin');
+  var d = state.data;
+  LECTURES[n.id] = {
+    s: d.fact || (d.scene.length ? d.scene[0] : ''),
+    fact: d.fact,
+    common: d.common, insight: d.insight,
+    scene: d.scene.join(' '), mechanism: d.mech, formula: d.formula,
+    bounds: d.bounds.join(' '), misconceptions: d.mis, list: d.list, p: []
+  };
+  if (n.kind === 'fact' && d.fact) appendUpgrade(state.box, n);
+  if (state.children.length && n.children.length === 0){
+    var fresh = [];
+    for (var ci = 0; ci < state.children.length; ci++){
+      var lab = state.children[ci][0];
+      var dup = false;
+      for (var nk in NODES){
+        if (NODES[nk].cluster === cl.id && NODES[nk].label === lab){ dup = true; break; }
+      }
+      if (!dup) fresh.push(state.children[ci]);
+    }
+    if (fresh.length){
+      layoutChildren(cl, n, fresh);
+      mount();
+      revealClusterNew(cl);
+      relayoutNode(n.id, true);
+      updateMinimap();
+    }
+  }
+  if (state.title && n.kind === 'bridge'){
+    n.label = shortLabel(state.title, 14);
+    indexAdd(n);
+    var bInner = '<span class="bmk">⇄</span>' + n.label;
+    if (n.crossIds && n.crossIds.length) bInner += '<span class="mk">◈</span>';
+    if (n.rel) bInner += '<span class="rel">' + n.rel + '</span>';
+    if (n.el) n.el.innerHTML = bInner;
+    if (currentId === n.id){
+      var h2b = pbody.querySelector('h2'); if (h2b) h2b.textContent = n.label;
+      crumbEl.textContent = n.label;
+    }
+    scheduleSave();
+  }
+  if (state.check.indexOf('fail') === 0){
+    if (window.console) console.warn('[生成自检] ' + n.label + ' -> ' + state.check);
+    var det = document.createElement('details');
+    det.className = 'selfcheck';
+    var sm = document.createElement('summary');
+    sm.textContent = '本次生成未通过自检（点击查看）';
+    det.appendChild(sm);
+    var pp = document.createElement('p');
+    pp.textContent = state.check.slice(5).trim();
+    det.appendChild(pp);
+    state.box.appendChild(det);
+  }
+  updateTabCount(cardsFor(n).length);
+  if (panelTab === 'cards' && currentId === n.id) showCards();
+}
+function renderLive(n, cl, bust){
+  var crumb = [], cur = n;
+  while (cur){ crumb.unshift(shortLabel(cur.label, 14)); cur = cur.parentId ? NODES[cur.parentId] : null; }
+  crumbEl.textContent = crumb.join('  ›  ');
+  var ls = linksSvg.querySelectorAll('line');
+  for (var i = 0; i < ls.length; i++){ var pid = ls[i].dataset.id.split('_'); ls[i].classList.toggle('hot', pid[0] === n.id || pid[1] === n.id); }
+
+  pbody.innerHTML = '';
+  panel.classList.add('open');
+
+  var badge = document.createElement('div');
+  badge.className = 'badge' + (n.kind === 'question' ? ' qb' : '') + (n.kind === 'fact' ? ' qb factb' : '');
+  badge.textContent = n.kind === 'fact' ? '事实 · 一句话就够' : (n.kind === 'question' ? (n.parentId ? '你的追问' : '问题原点') : ((n.rel || '概念') + (n.why ? ' · ' + n.why : '')));
+  pbody.appendChild(badge);
+  if (n.parentId && NODES[n.parentId]){
+    var fl = document.createElement('p'); fl.className = 'fromline';
+    fl.textContent = '你是从「' + shortLabel(NODES[n.parentId].label, 14) + '」这条路过来的' + (n.why ? ' · 重点在于：' + n.why : '');
+    pbody.appendChild(fl);
+  }
+  var h2 = document.createElement('h2'); h2.textContent = n.label; pbody.appendChild(h2);
+
+  var box = document.createElement('div'); box.className = 'lecture'; pbody.appendChild(box);
+  var tip = document.createElement('p'); tip.className = 'lanenote'; tip.textContent = '正在生成…';
+  box.appendChild(tip);
+
+  var state = { box: box, children: [], check: 'ok', tip: tip, isFact: n.kind === 'fact', data: { fact: '', common: '', insight: '', scene: [], mech: [], bounds: [], mis: [], list: [], formula: null } };
+
+  /* 两档名单：本星团的必须复用（防止同一个东西在团里长出两个名字）；别团的名字只当同义词表。
+     以前把全图的名字混成一份发过去，模型会把它当候选菜单，数学题也答成机器学习。 */
+  var seen = [], known = [];
+  for (var ci = 0; ci < cl.nodeIds.length; ci++){
+    var cn = NODES[cl.nodeIds[ci]];
+    if (cn && cn.id !== n.id && cn.kind === 'concept' && seen.indexOf(cn.label) < 0) seen.push(cn.label);
+  }
+  for (var k in NODES){
+    var m = NODES[k];
+    if (m.id !== n.id && m.kind === 'concept' && m.cluster !== n.cluster && seen.indexOf(m.label) < 0 && known.indexOf(m.label) < 0) known.push(m.label);
+  }
+
+  /* 桥节点不是「一个概念」：它没有自己的含义，它讲的是两个孩子之间的关系 */
+  var isFact = n.kind === 'fact';
+  var isBridge = n.kind === 'bridge', bKids = [];
+  if (isBridge){ for (var bi=0;bi<n.children.length;bi++){ var bk = NODES[n.children[bi]]; if (bk) bKids.push(bk.label); } }
+  var reqBody = {
+    concept: (isBridge && bKids[0]) ? bKids[0] : n.label,
+    topic:   (isBridge && bKids[1]) ? bKids[1] : cl.name,
+    parent: n.parentId ? NODES[n.parentId].label : '',
+    rel: n.rel || '', why: n.why || '',
+    relation: isBridge,
+    mode: isFact ? 'fact' : '',
+    answer: n.rel === '追问',
+    bust: !!bust,
+    seen: isBridge ? [] : seen.slice(0, 24),
+    known: isBridge ? [] : known.slice(0, 24)
+  };
+  if (DIRECT){ runDirect(n, cl, state, reqBody); return; }
+
+  fetch('/api/lecture', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(reqBody)
+  }).then(function(res){
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var reader = res.body.getReader(), dec = new TextDecoder(), buf = '';
+    function pump(){
+      return reader.read().then(function(r){
+        if (r.done){
+          if (state.tip && state.tip.parentNode) state.tip.parentNode.removeChild(state.tip);
+          finishLive(n, state, cl);
+          return;
+        }
+        buf += dec.decode(r.value, { stream: true });
+        var idx;
+        while ((idx = buf.indexOf('\n')) >= 0){
+          handleLiveLine(state, buf.slice(0, idx).split('\r').join(''));
+          buf = buf.slice(idx + 1);
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(function(e){
+    var rb2 = document.getElementById('regenBtn');
+    if (rb2) rb2.classList.remove('spin');
+    if (state.tip && state.tip.parentNode) state.tip.parentNode.removeChild(state.tip);
+    var p = document.createElement('p'); p.className = 'rv on';
+    p.textContent = '生成失败：' + (e && e.message ? e.message : e);
+    box.appendChild(p);
+  });
+}
+
+/* ============ 直连模式：浏览器直接调模型 ============ */
+var RULES = [
+  '你是一个教科书级的解释者，但不预设学科：数学、物理、人文、艺术、工程一样对待。用户在探索一张知识星图，刚点开一个概念，你要写一份极短的讲义。',
+  '',
+  '【输出格式：行协议，必须严格遵守】',
+  '每行以 ## 开头，标签 + 空格 + 内容。不要输出任何其他文字，不要用 markdown 代码块，不要用列表符号。',
+  '',
+  '##COMMON 大多数人以为：<一句流行的错误理解>',
+  '##INSIGHT 其实<一句反直觉的真相>',
+  '##LIST <条目> | <一句为什么它值得一提>   ← 只在清单型问题下使用，最多 10 行；其它情况不要输出这一行',
+  '##SCENE <一个具体画面：不出现任何专业名词，不超过两句，必须含一个具体数字或量词，以及一个身体动作或感官>',
+  '##MECH <它是怎么工作的，一段；可以有多行 ##MECH>',
+  '##FORMULA <公式。用 Unicode 直接写：θ η λ ∇ ≤ 等，不要写 LaTeX 反斜杠>',
+  '##READ <把公式念成中文。不要自己加「读作：」前缀，前端会统一加>',
+  '##SYM <符号> | <它是什么>',
+  '##BOUNDS <它在什么时候失效或不成立>',
+  '##MIS <一个常见误解>',
+  '##CHILD <子概念名> | <它回答的下一个问题> | <关系词> | <一句话为什么值得点进去>',
+  '',
+  '【硬性规则】',
+  '1. 洞察必须反直觉：##INSIGHT 里必须出现「其实/并不是/并非/反而/恰恰/只有」其中之一。禁止写成定义句。',
+  '2. 画面必须自足：##SCENE 里不许出现任何专业名词，不许出现其他概念的名字。',
+  '3. 公式若写，必须同时给出 ##READ 和至少两个 ##SYM；若这个概念没有合适的公式，就整体省略这三行。',
+  '4. 必须写 ##BOUNDS。',
+  '5. ##CHILD 最多 4 行，第二个字段必须是「下一个困惑」，不是「相关概念」。每个子概念都必须能从「本次要讲的概念」本身自然引出；如果这个概念你了解得太少、想不出真正相关的子概念，就少写几个（允许只写 1 个甚至完全不写），绝对不许拿别的领域的术语来凑数。',
+  '6. 禁止用别的概念来定义当前概念。顺序永远是：画面 → 现象 → 最后才给它名字。',
+  '7. 正文总长不超过 400 字（公式与符号表不算）。宁可短。',
+  '8. 清单型问题（问「有哪些 / 哪几个 / 分几类 / 都包括 / 包含哪些」）必须先用 ##LIST 逐条列出来，一条一行，最多 10 行，每条都跟一句"为什么它值得一提"；此时禁止纠错式开场，#COMMON 不要写成"你以为……其实不是"，改成「这题常常被当成一个背诵清单，但清单是怎么被选出来的，本身就是答案」。',
+  '9. 一个词可能在好几个学科里有完全不同的含义（正则化、熵、梯度、收敛…）。必须先看「当前正在探索的问题」的语境：语境落在数学/物理/人文，就绝不要默认取机器学习或计算机里的那一支。若另一种含义极其常见，可以在 ##MIS 里补一句「另一个学科里它指的不是这个」，但正文主体必须落在当前语境这一支上。',
+  '',
+  '关系词只能从这些里选：前置 / 参数 / 上游 / 陷阱 / 变体 / 技巧 / 应用 / 对比 / 延伸'
+].join('\n');
+
+/* 事实模式的追加规则：与 server.js 的 FACT_ADD 逐字一致。
+   两边一旦不一致，双击打开（直连）和经服务端走会给出一长一短两种答案。 */
+var FACT_ADD = '\n\n【本次追加 · 事实模式】\n用户要的只是一个事实，不是理解。所以：\n' +
+  '1. 第一行必须是 ##FACT <直接答案，一句话，不超过 40 字>。不许用 ##COMMON / ##INSIGHT 开场，不许先讲背景再给答案，不许制造悬念。\n' +
+  '2. 给完答案之后，最多再写 ##MECH <它为什么会是这样，一到两段>。\n' +
+  '3. 禁止输出 ##COMMON / ##INSIGHT / ##SCENE / ##BOUNDS / ##LIST / ##CHILD —— 事实问题不需要反直觉开场，也不需要「它在什么时候失效」；事实是一个终点，不是新探索的起点，继续深入交给前端那个「为什么会这样」按钮。\n' +
+  '4. 即使答案很平淡、很无聊、一句话就说完，也要照直说。不要为了显得深刻而制造悬念。\n' +
+  '5. 若答案有争议或你不确定，##FACT 里写清楚「通常认为……」，宁可承认不确定，也绝不编造具体数字、年份或人名。';
+
+function buildUserPrompt(b){
+  if (b.mode === 'fact'){
+    return ['用户要的只是一个事实，不是理解。他问的是：' + b.concept,
+            '当前正在探索的问题：' + b.topic,
+            (b.known && b.known.length) ? ('星图里别的星团已经有这些名字（同义词表，不是候选菜单）：' + b.known.join('、')) : '',
+            '第一行必须直接给出答案，不要铺垫、不要「大多数人以为」式开场、不要悬念。',
+            '如果你不确定、或者答案本身有争议，就在 ##FACT 里直说「通常认为是……，但有分歧」并指出分歧在哪 —— 绝对不许编一个数字或一个年份。'].filter(Boolean).join('\n');
+  }
+  if (b.relation){
+    return ['用户把星图里两个问题连到了一起：',
+            '问题 A：' + b.concept,
+            '问题 B：' + b.topic,
+            '这一节要讲的不是 A、也不是 B，而是「A 和 B 之间到底是什么关系」。',
+            '按这个顺序讲：① 它们其实是同一件事的两个侧面（共同点）；② 关键差别在哪；③ 谁更基础、该先弄清谁；④ 给一个能同时串起两者的具体例子。',
+            '开头必须原样各点一次 A 和 B 的名字（让读者知道在讲哪两件事），但之后不要再分别复述它们各自的内容 —— 通篇只讲它们之间的关系。',
+            '仍然严格遵守行协议：##COMMON 写它们共同的那个直觉，##BOUNDS 写这个类比什么时候不成立，##MIS 写把它们混为一谈的常见误解。',
+            '并且第一行必须是 ##TITLE <不超过 12 个字，概括这两个问题的关系，例如「同一个硬币的两面」>。'].join('\n');
+  }
+  if (b.answer){
+    return ['用户在「' + b.parent + '」这一节提出了一个追问：' + b.concept,
+            '当前正在探索的问题：' + b.topic,
+            '请直接回答这个追问，仍然严格遵守上面的行协议。'].join('\n');
+  }
+  return ['当前正在探索的问题：' + b.topic,
+          '本次要讲的概念：' + b.concept,
+          b.parent ? ('来路：从「' + b.parent + '」过来，关系=' + (b.rel || '') + '，为什么=' + (b.why || '')) : '这是这个星团的原点。',
+          '这个星团里已经有的概念：' + (b.seen && b.seen.length ? b.seen.join('、') : '无'),
+          '如果你的子概念里有任何一个和上面重复，必须原样复用已有的那个名字，不要另造新词。',
+          (b.known && b.known.length) ? ('星图里别的星团已经有这些名字（把它当同义词表看，不是候选菜单）：' + b.known.join('、') +
+            '。只有当你的子概念确实就是同一个东西时才复用；就算字面一模一样，只要语境不同（例如数学里的正则化和机器学习里的正则化）也绝对不要复用。不要为了让名字出现在图上，就把别的学科的概念塞进来。') : '',
+          '也不要在正文里重复解释上面这些概念。'].filter(Boolean).join('\n');
+}
+
+/* 清单型问题（「有哪些」）：服务端 isEnumQuestion 有一份，客户端必须一致，
+   否则直连模式下这类问题不会生成 ##LIST，退化成普通讲义。 */
+var ENUM_Q = /有哪些|哪几个|哪几种|分几类|分为几类|都包括|包含哪些|有哪几/;
+function isEnumQuestion(s){ return !!s && ENUM_Q.test(s); }
+
+var CHK_DIGITS = '0123456789０１２３４５６７８９一二三四五六七八九十百千万两';
+var CHK_TURNS = ['其实', '并不是', '并非', '反而', '恰恰', '只有'];
+function chkDigit(s){ for (var i=0;i<s.length;i++) if (CHK_DIGITS.indexOf(s.charAt(i)) >= 0) return true; return false; }
+function chkTurn(s){ for (var i=0;i<CHK_TURNS.length;i++) if (s.indexOf(CHK_TURNS[i]) >= 0) return true; return false; }
+function selfCheckClient(state, concept, isRel, isFact){
+  var d = state.data, problems = [], childNames = [], i;
+  for (i=0;i<state.children.length;i++) childNames.push(state.children[i][0]);
+  var insight = d.insight || '', sceneAll = (d.scene || []).join(' ');
+  /* 关系讲义天然要同时点名 A 和 B，所以「出现本节点名/子概念名」这几条对它不适用 */
+  if (!isRel && !isFact){
+    if (insight && insight.indexOf(concept) >= 0) problems.push('洞察里出现了本节点名（在下定义）');
+    for (i=0;i<childNames.length;i++){
+      var nm = childNames[i];
+      if (nm && nm.length >= 2 && insight.indexOf(nm) >= 0) problems.push('洞察里出现了子概念「' + nm + '」（耦合）');
+      if (nm && nm.length >= 2 && sceneAll.indexOf(nm) >= 0) problems.push('画面里出现了子概念「' + nm + '」（不自足）');
+    }
+    if (sceneAll && concept && sceneAll.indexOf(concept) >= 0) problems.push('画面里出现了本节点名（不自足）');
+  }
+  /* 事实模式（用户明确说「我只想知道一个事实」）：模具整个不一样，下面这些检查全部不适用 */
+  if (isFact){
+    if (!d.fact) problems.push('事实模式没有写 ##FACT 直答');
+    else if (d.fact.length > 60) problems.push('##FACT 太长（' + d.fact.length + ' 字）—— 事实要一句话说完');
+    if (d.insight) problems.push('事实模式不该写 ##INSIGHT');
+    if (d.common) problems.push('事实模式不该写 ##COMMON');
+    return problems;
+  }
+  if (d.scene.length && !chkDigit(sceneAll)) problems.push('画面里没有具体数字或量词');
+  if (!insight) problems.push('没有写洞察');
+  else if (!chkTurn(insight)) problems.push('洞察里没有转折词');
+  if (!d.bounds.length) problems.push('没有写失效条件');
+  if (!state.children.length) problems.push('没有给出子概念');
+  if (state.children.length > 4) problems.push('子概念超过 4 个');
+  if (!isRel && isEnumQuestion(concept) && !(d.list || []).length) problems.push('这是清单型问题，却没有给 ##LIST 清单');
+  return problems;
+}
+
+function runDirect(n, cl, state, b){
+  var cfg = cfgStore();
+  var key = cfg.apiKey || '';
+  var stopSpin = function(){ var rb = document.getElementById('regenBtn'); if (rb) rb.classList.remove('spin'); };
+  var dropTip = function(){ if (state.tip && state.tip.parentNode) state.tip.parentNode.removeChild(state.tip); };
+  if (!key){
+    dropTip(); stopSpin();
+    var p0 = document.createElement('p'); p0.className = 'rv on';
+    p0.textContent = '还没有配置 API Key —— 点顶栏「设置」填一个就能用了。';
+    state.box.appendChild(p0);
+    return;
+  }
+  var reqBody = Object.assign({}, b, { seen: b.seen });
+  var enumQ = b.mode !== 'fact' && !b.relation && (isEnumQuestion(b.concept) || isEnumQuestion(b.topic));
+  var sysRules = b.mode === 'fact'
+    ? RULES + FACT_ADD
+    : b.relation
+    ? RULES + '\n\n【本次追加】\n这一节讲的是两个问题之间的关系，不是某一个概念。第一行必须输出 ##TITLE <不超过 12 字的短标题>，概括这两个问题之间是什么关系；然后照常给 ##COMMON / ##SCENE / ##INSIGHT / ##BOUNDS / ##MIS / ##CHILD（子概念给的是「想弄懂这层关系，下一步该点哪个概念」）。'
+    : enumQ
+    ? RULES + '\n\n【本次追加】\n这个问题是清单型问题：请务必用 ##LIST 逐条列出来，一条一行「##LIST <条目> | <一句为什么它值得一提>」，最多 10 行，并且排在 ##SCENE 之前。不要用纠错式开场。'
+    : RULES;
+  fetch(stripSlash(cfg.baseUrl || 'https://api.deepseek.com/v1') + '/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: JSON.stringify({
+      model: cfg.model || 'deepseek-chat',
+      messages: [{ role: 'system', content: sysRules }, { role: 'user', content: buildUserPrompt(reqBody) }],
+      stream: true,
+      temperature: 0.7
+    })
+  }).then(function(res){
+    if (!res.ok) return res.text().then(function(t){ throw new Error('HTTP ' + res.status + ' · ' + t.slice(0, 160)); });
+    var reader = res.body.getReader(), dec = new TextDecoder(), sse = '', pend = '';
+    function pump(){
+      return reader.read().then(function(r){
+        if (r.done){
+          if (pend.trim()) handleLiveLine(state, pend.trim());
+          var probs = selfCheckClient(state, b.concept, b.relation, b.mode === 'fact');
+          state.check = probs.length ? ('fail ' + probs.join('；')) : 'ok';
+          dropTip(); stopSpin();
+          finishLive(n, state, cl);
+          return;
+        }
+        sse += dec.decode(r.value, { stream: true });
+        var i;
+        while ((i = sse.indexOf('\n')) >= 0){
+          var line = sse.slice(0, i).trim(); sse = sse.slice(i + 1);
+          if (line.slice(0, 5) !== 'data:') continue;
+          var dd = line.slice(5).trim();
+          if (dd === '[DONE]') continue;
+          try {
+            var j = JSON.parse(dd);
+            var c = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+            if (!c) continue;
+            pend += c;
+            var k;
+            while ((k = pend.indexOf('\n')) >= 0){
+              handleLiveLine(state, pend.slice(0, k).split('\r').join(''));
+              pend = pend.slice(k + 1);
+            }
+          } catch (e) {}
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(function(e){
+    dropTip(); stopSpin();
+    var p = document.createElement('p'); p.className = 'rv on';
+    p.textContent = '生成失败：' + (e && e.message ? e.message : e);
+    state.box.appendChild(p);
+  });
+}
+
+/* 配置读写：必须在顶层。直连模式的 runDirect() 也要用它们，
+   而 runDirect 定义在 window.onload 回调之外 —— 放进回调里就会 ReferenceError: cfgStore is not defined。 */
+function cfgStore(){
+  var c = {};
+  try { c = JSON.parse(localStorage.getItem('starmap.cfg') || '{}'); } catch (e) { c = {}; }
+  return c;
+}
+function cfgStoreSave(obj){
+  try { localStorage.setItem('starmap.cfg', JSON.stringify(obj)); return true; } catch (e) { return false; }
+}
+function stripSlash(u){ var b = u || ''; while (b.length && b.charAt(b.length - 1) === '/') b = b.slice(0, -1); return b; }
+
+/* ============ 启动 ============ */
+window.addEventListener('load', function(){
+  world = document.getElementById('world');
+  linksSvg = document.getElementById('links');
+  viewport = document.getElementById('viewport');
+  panel = document.getElementById('panel');
+  pbody = document.getElementById('pbody');
+  crumbEl = document.getElementById('crumb');
+  minimap = document.getElementById('minimap');
+  mmInner = document.getElementById('mmInner');
+  mmView = document.getElementById('mmView');
+  toastEl = document.getElementById('toast');
+  laneBtn = document.getElementById('laneBtn');
+
+  var box = document.getElementById('stars');
+  for (var i=0;i<64;i++){
+    var s = document.createElement('div');
+    s.className = 'star';
+    var sz = Math.random()*1.8 + 0.4;
+    s.style.width = sz + 'px'; s.style.height = sz + 'px';
+    s.style.left = (Math.random()*100) + '%'; s.style.top = (Math.random()*100) + '%';
+    s.style.opacity = (0.16 + Math.random()*0.62).toFixed(2);
+    if (i % 5 === 0){                       /* 每 5 颗留一颗会眨眼，其余恒定 —— 肉眼看不出差别，省下 80% 的动画 */
+      s.className = 'star tw';
+      s.style.animationDelay = (Math.random()*4) + 's';
+      s.style.animationDuration = (3 + Math.random()*4) + 's';
+    }
+    box.appendChild(s);
+  }
+
+  bindViewport(); bindMinimap();
+
+  function bootGraph(st){
+    if (st && st.clusters && st.clusters.length){ restoreState(st); return true; }
+    createCluster('机器学习', -1500, -180, childrenOf('机器学习'));
+    createCluster('期权是什么', 1500, 420, childrenOf('期权是什么'));
+    return false;
+  }
+  function afterGraph(restored){
+    mount();
+    if (window.__diag) window.__diag('启动完成 · 星团 ' + Object.keys(CLUSTERS).length + ' · 节点 ' + Object.keys(NODES).length +
+      (restored ? ' · 已恢复存档' : ' · 无存档(演示数据)') +
+      ' · viewport ' + viewport.clientWidth + '×' + viewport.clientHeight + ' · V.k=' + V.k.toFixed(2));
+    V.px = viewport.clientWidth/2; V.py = viewport.clientHeight/2; V.k = 0.5; apply();
+    for (var cid in CLUSTERS) revealCluster(CLUSTERS[cid], 200);
+    updateMinimap();
+    if (restored){
+      landing.classList.add('gone');
+      uni.classList.add('on');
+      started = true;
+      buildMenu();
+      fitAll();
+      showToast('欢迎回来 · 已恢复你的星图');
+    }
+  }
+  whenMode(function(){
+    if (window.__diag) window.__diag('模式 ' + (DIRECT ? '直连浏览器' : '本地服务端') + ' · LIVE=' + LIVE + ' DIRECT=' + DIRECT);
+    if (DIRECT){
+      var raw = null;
+      try { raw = JSON.parse(localStorage.getItem('starmap.state') || 'null'); } catch (e) { raw = null; }
+      afterGraph(bootGraph(raw));
+      return;
+    }
+    fetch('/api/state')
+      .then(function(r){ return r.json(); })
+      .then(function(st){ afterGraph(bootGraph(st)); })
+      .catch(function(){ afterGraph(bootGraph(null)); });
+  });
+
+  var input = document.getElementById('q');
+  var uni = document.getElementById('universe');
+  var landing = document.getElementById('landing');
+  var started = false;
+
+  document.getElementById('chips').addEventListener('click', function(e){
+    if (e.target.tagName === 'BUTTON'){ input.value = e.target.textContent; input.focus(); }
+  });
+
+  function locate(node, msg){
+    landing.classList.add('gone');
+    uni.classList.add('on');
+    started = true;
+    buildMenu();
+    setTimeout(function(){ openNode(node.id); setView(node.x, node.y, 1.0, true); }, 260);
+    if (msg) showToast(msg);
+  }
+
+  var pending = null;
+  var askMode = 'principle';   /* 'principle' | 'fact'：首页那两个 chip 决定整条链路用哪副模具 */
+
+  function openCard(title, text, primary, secondary){
+    document.getElementById('mbT').textContent = title;
+    document.getElementById('mbQ').textContent = text;
+    document.getElementById('mbSame').textContent = primary;
+    document.getElementById('mbNew').textContent = secondary;
+    document.getElementById('mergeBox').classList.add('on');
+  }
+  function closeCard(){ document.getElementById('mergeBox').classList.remove('on'); pending = null; }
+
+  /* 输入里提到了图里已有的概念吗？取最长匹配 */
+  function mentionedConcept(q){
+    var best = null;
+    for (var id in NODES){
+      var n = NODES[id];
+      if (n.kind !== 'concept' || n.label.length < 2) continue;
+      if (q.indexOf(n.label) >= 0 && (!best || n.label.length > best.length)) best = n.label;
+    }
+    return best;
+  }
+
+  function createNew(q, anchorLabel, mode){
+    var spot = freeSpot();
+    var specs = childrenOf(q);
+    if (!specs.length){
+      specs = genericSpecs(q);
+      if (anchorLabel){
+        specs = specs.filter(function(s){ return s[0] !== anchorLabel; });
+        specs.unshift([anchorLabel, '已有', '你之前问过这个概念']);
+      }
+    }
+    if (LIVE || DIRECT) specs = [];
+    var nc = createCluster(q, spot.x, spot.y, specs);
+    if (mode === 'fact' && NODES[nc.rootId]) NODES[nc.rootId].kind = 'fact';
+    mount();
+    revealCluster(nc, 500);
+    landing.classList.add('gone'); uni.classList.add('on'); started = true;
+    buildMenu();
+    var lane = false;
+    for (var i=0;i<nc.nodeIds.length;i++){ var _cn = NODES[nc.nodeIds[i]]; if (_cn && _cn.crossIds.length) lane = true; }
+    setTimeout(function(){ setView(nc.cx, nc.cy, 1.0, true); }, 120);
+    setTimeout(function(){ openNode(nc.rootId); }, 900);
+    if (lane) setTimeout(function(){ showToast('它和你之前问过的概念连上了航线'); }, 1300);
+  }
+
+  function enter(){
+    var q = (input.value || '梯度下降').trim();
+    if (!q) return;
+
+    /* 1. 一模一样的问题 */
+    for (var cid in CLUSTERS){
+      if (CLUSTERS[cid].name === q){
+        var cl = CLUSTERS[cid];
+        landing.classList.add('gone'); uni.classList.add('on'); started = true; buildMenu();
+        setTimeout(function(){ setView(cl.cx, cl.cy, 1.0, true); }, 120);
+        setTimeout(function(){ openNode(cl.rootId); }, 700);
+        showToast('这个问题已经在你的星图里了');
+        return;
+      }
+    }
+    /* 2. 输入本身就是图里已有的概念 → 定位 */
+    for (var id in NODES){
+      var n = NODES[id];
+      if (n.parentId && n.label === q){
+        locate(n, '「' + shortLabel(q, 12) + '」已经在你的星图里了 · 已为你定位');
+        return;
+      }
+    }
+    /* 3. 问题里提到了已有的概念 → 问一句 */
+    var mc = mentionedConcept(q);
+    if (mc){
+      pending = { type:'concept', q:q, label:mc };
+      openCard('这个问题里有一个你学过的概念', '「' + mc + '」', '带我看看它', '我要问个新的');
+      return;
+    }
+    /* 4. 很像的旧问题 → 问一句，绝不擅自合并 */
+    var best = null, bestS = 0;
+    for (var cid2 in CLUSTERS){
+      var s2 = sim(q, CLUSTERS[cid2].name);
+      if (s2 > bestS){ bestS = s2; best = CLUSTERS[cid2]; }
+    }
+    if (best && bestS >= 0.5){
+      pending = { type:'merge', q:q, cl:best };
+      openCard('你好像问过一个很像的问题', '「' + best.name + '」', '算同一个 · 带我去', '不一样 · 问新的');
+      return;
+    }
+    /* 5. 全新的问题 → 新星团 */
+    createNew(q, null, askMode);
+  }
+  document.getElementById('mbSame').addEventListener('click', function(){
+    if (!pending) return;
+    var p = pending; closeCard();
+    if (p.type === 'delete'){ doDelete(p.id); return; }
+    if (p.type === 'cluster'){ mergeCluster(p.src, p.dst); return; }
+    if (p.type === 'merge'){
+      if (p.cl.aliases.indexOf(p.q) < 0) p.cl.aliases.push(p.q);
+      landing.classList.add('gone'); uni.classList.add('on'); started = true; buildMenu();
+      setTimeout(function(){ setView(p.cl.cx, p.cl.cy, 1.0, true); }, 120);
+      setTimeout(function(){ openNode(p.cl.rootId); }, 700);
+      showToast('已并入同一个问题');
+      return;
+    }
+    for (var id in NODES){
+      if (NODES[id].parentId && NODES[id].label === p.label){
+        locate(NODES[id], '已为你定位到「' + p.label + '」');
+        return;
+      }
+    }
+  });
+  document.getElementById('mbNew').addEventListener('click', function(){
+    if (!pending) return;
+    var p = pending; closeCard();
+    if (p.type === 'cluster' || p.type === 'delete') return;
+    createNew(p.q, p.type === 'concept' ? p.label : null, askMode);
+  });
+  /* 「事实 / 原理」分诊：这是产品显式的一部分，不是提示词里的小开关。
+     原理走现在这套讲义（画面 → 洞察 → 机制）；事实走 ##FACT 直答，答案在第一行。 */
+  function setAskMode(m){
+    askMode = (m === 'fact') ? 'fact' : 'principle';
+    var bs = document.querySelectorAll('#modes .modebtn');
+    for (var i=0;i<bs.length;i++) bs[i].classList.toggle('active', bs[i].dataset.m === askMode);
+    var h1 = document.getElementById('landH1');
+    if (h1) h1.innerHTML = askMode === 'fact' ? '今天，想<em>知道</em>什么？' : '今天，想<em>搞懂</em>什么？';
+    var hn = document.getElementById('landHint');
+    if (hn) hn.textContent = askMode === 'fact'
+      ? '按 Enter 开始 · 答案会直接给出来，不绕圈子'
+      : '按 Enter 开始 · 你的问题会在这里长成一片星图';
+  }
+  (function(){
+    var bs = document.querySelectorAll('#modes .modebtn');
+    for (var i=0;i<bs.length;i++) bs[i].addEventListener('click', function(){ setAskMode(this.dataset.m); });
+  })();
+  document.getElementById('go').addEventListener('click', enter);
+  input.addEventListener('keydown', function(e){ if (e.key === 'Enter') enter(); });
+
+  document.getElementById('brandBtn').addEventListener('click', function(e){
+    e.stopPropagation(); document.getElementById('menu').classList.toggle('open');
+  });
+  document.addEventListener('click', function(){ document.getElementById('menu').classList.remove('open'); closeSearch(); });
+
+  /* ============ 顶栏搜索：图里有就定位过去，没有就当场当成提问 ============ */
+  var sIn = document.getElementById('searchInput');
+  var sRes = document.getElementById('sres');
+  var sActs = [], sIdx = -1;
+  function escHtml(s){
+    return String(s).replace(/[&<>"]/g, function(c){
+      return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+    });
+  }
+  function searchMatches(q){
+    q = (q || '').trim().toLowerCase();
+    var out = [];
+    if (!q) return out;
+    for (var id in NODES){
+      var n = NODES[id];
+      if (!CLUSTERS[n.cluster]) continue;
+      var p = n.label.toLowerCase().indexOf(q);
+      if (p < 0 && (n.rel || '').toLowerCase().indexOf(q) < 0) continue;
+      out.push({ kind:'node', id:id, label:n.label, cluster:n.cluster, isQ:n.kind === 'question' || n.kind === 'fact',
+                 score:(p > 0 ? 1 : 0) + (n.kind === 'question' || n.kind === 'fact' ? 0.1 : 0.2) + Math.min(n.label.length, 30) / 100 });
+    }
+    for (var cid in CLUSTERS){
+      var c = CLUSTERS[cid], hit = c.name.toLowerCase().indexOf(q) >= 0;
+      for (var a = 0; !hit && a < (c.aliases || []).length; a++) hit = String(c.aliases[a]).toLowerCase().indexOf(q) >= 0;
+      if (hit) out.push({ kind:'cluster', id:cid, label:c.name, cluster:cid, score:0.5 });
+    }
+    out.sort(function(x, y){ return x.score - y.score; });
+    return out.slice(0, 7);
+  }
+  function paintSearch(){
+    var rows = sRes.querySelectorAll('.row');
+    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('active', Number(rows[i].dataset.i) === sIdx);
+  }
+  function renderSearch(q){
+    q = q || '';
+    var mt = searchMatches(q), html = '';
+    sActs = [];
+    for (var i = 0; i < mt.length; i++){
+      var m = mt[i], cl = CLUSTERS[m.cluster];
+      sActs.push(m);
+      html += '<div class="row" data-i="' + i + '">'
+            + '<span class="bdg' + (m.isQ ? ' q' : '') + '">' + (m.kind === 'cluster' ? '星团' : (m.isQ ? '问题' : '概念')) + '</span>'
+            + '<span class="cdot" style="background:hsl(' + (cl ? cl.hue : 222) + ',70%,70%)"></span>'
+            + '<span class="lb">' + escHtml(m.label) + '</span>'
+            + '<span class="sub">' + (m.kind === 'cluster' ? '看这个星团' : escHtml(shortLabel(cl ? cl.name : '', 12))) + '</span></div>';
+    }
+    if (q.trim()){
+      if (!mt.length) html += '<div class="hint">星图里还没有这个</div>';
+      sActs.push({ kind:'ask', label:q.trim(), mode:'principle' });
+      html += '<div class="row askrow" data-i="' + (sActs.length - 1) + '"><span class="bdg q">提问</span><span class="lb">💡 弄懂一个原理：「' + escHtml(shortLabel(q.trim(), 16)) + '」</span><span class="sub">↵</span></div>';
+      sActs.push({ kind:'ask', label:q.trim(), mode:'fact' });
+      html += '<div class="row askrow" data-i="' + (sActs.length - 1) + '"><span class="bdg q">提问</span><span class="lb">🔎 只要一个事实：「' + escHtml(shortLabel(q.trim(), 16)) + '」</span><span class="sub">一行答案</span></div>';
+    }
+    sRes.innerHTML = html;
+    sRes.classList.toggle('open', !!q.trim());
+    sIdx = q.trim() ? 0 : -1;
+    paintSearch();
+  }
+  function closeSearch(){ sRes.classList.remove('open'); sIdx = -1; }
+  function goAct(a){
+    if (!a) return;
+    sIn.value = ''; renderSearch('');
+    if (a.kind === 'ask'){
+      input.value = a.label;
+      setAskMode(a.mode);
+      landing.classList.add('gone'); uni.classList.add('on'); started = true;
+      enter();
+      return;
+    }
+    if (a.kind === 'cluster'){
+      var c = CLUSTERS[a.id];
+      locate(NODES[c.rootId], '「' + shortLabel(c.name, 12) + '」· 已为你定位');
+      return;
+    }
+    locate(NODES[a.id], '已为你定位到「' + shortLabel(a.label, 12) + '」');
+  }
+  sIn.addEventListener('input', function(){ renderSearch(this.value); });
+  sIn.addEventListener('focus', function(){ if (this.value.trim()) renderSearch(this.value); });
+  sIn.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      if (!sActs.length) return;
+      e.preventDefault();
+      sIdx = (sIdx + (e.key === 'ArrowDown' ? 1 : -1) + sActs.length) % sActs.length;
+      paintSearch();
+    } else if (e.key === 'Enter'){
+      if (!sActs.length) return;
+      e.preventDefault();
+      goAct(sActs[sIdx < 0 ? 0 : sIdx]);
+    } else if (e.key === 'Escape'){
+      this.value = ''; renderSearch(''); this.blur();
+    }
+  });
+  sRes.addEventListener('mousedown', function(ev){
+    var el = ev.target, row = null;
+    while (el && el !== sRes){ if (el.classList && el.classList.contains('row')){ row = el; break; } el = el.parentNode; }
+    if (!row) return;
+    ev.preventDefault();
+    goAct(sActs[Number(row.dataset.i)]);
+  });
+  document.addEventListener('keydown', function(e){
+    if (!uni.classList.contains('on')) return;
+    var tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.key === '/' || ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K'))){
+      e.preventDefault(); sIn.focus(); sIn.select();
+    }
+  });
+  var focusBtn = document.getElementById('focusBtn');
+  focusBtn.addEventListener('click', function(){
+    focusMode = !focusMode;
+    focusBtn.classList.toggle('active', focusMode);
+    refreshVisibility();
+    showToast(focusMode ? '只显示你走过的路' : '显示全部节点');
+  });
+
+  laneBtn.addEventListener('click', function(){
+    laneForced = !laneForced;
+    clearPick();
+    if (laneForced){
+      panel.classList.remove('open');
+      currentId = null;
+    }
+    autoLanes();
+    refreshVisibility();
+    showToast(laneForced ? '航线模式：点两个节点把它们连起来（再点一次可删除）' : '已退出航线模式');
+  });
+
+  document.getElementById('followBtn').addEventListener('click', askFollow);
+  document.getElementById('followInput').addEventListener('keydown', function(e){ if (e.key === 'Enter') askFollow(); });
+
+  /* ---------- 模型配置弹窗 ---------- */
+  var PRESETS = {
+    deepseek:  ['https://api.deepseek.com/v1', 'deepseek-chat'],
+    zhipu:     ['https://open.bigmodel.cn/api/paas/v4', 'glm-4-flash'],
+    dashscope: ['https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus'],
+    moonshot:  ['https://api.moonshot.cn/v1', 'moonshot-v1-8k'],
+    openai:    ['https://api.openai.com/v1', 'gpt-4o-mini']
+  };
+  var cfgModal = document.getElementById('cfgModal');
+  var cfgMsgEl = document.getElementById('cfgMsg');
+  function cfgSay(t, cls){ cfgMsgEl.textContent = t; cfgMsgEl.className = 'cfgmsg' + (cls ? ' ' + cls : ''); }
+  function cfgOpen(){ cfgModal.classList.add('on'); }
+  function cfgClose(){ cfgModal.classList.remove('on'); }
+  function cfgHint(mode){
+    var s = document.getElementById('cfgSub'), n = document.getElementById('cfgNote');
+    if (mode === 'direct'){
+      s.textContent = '直连模式：这个页面直接调用模型接口，不经过任何服务器。API Key 只保存在你自己的浏览器里。';
+      n.textContent = '保存后会重新加载当前节点。想让 Key 不进浏览器，就改用 start-server.bat 启动、从 localhost 打开。';
+    } else {
+      s.textContent = '本地服务模式：填一次就写入本机 config.json。API Key 只在你和本机服务端之间传递，网页源码里搜不到。';
+      n.textContent = '保存成功后会自动重新加载当前节点。Key 留空表示不修改。';
+    }
+  }
+  function cfgLoad(){
+    if (DIRECT){
+      cfgHint('direct');
+      var c = cfgStore();
+      document.getElementById('cfgBase').value = c.baseUrl || 'https://api.deepseek.com/v1';
+      document.getElementById('cfgModel').value = c.model || 'deepseek-chat';
+      document.getElementById('cfgKey').value = c.apiKey || '';
+      cfgSay(c.apiKey ? ('当前：' + (c.model || 'deepseek-chat') + ' · 直连模式') : '还没有配置 API Key。', c.apiKey ? 'ok' : 'err');
+      return;
+    }
+    if (!LIVE){ cfgHint('server'); cfgSay('还没有连上任何模式，请稍后重试。', 'err'); return; }
+    cfgHint('server');
+    fetch('/api/config').then(function(r){ return r.json(); }).then(function(j){
+      document.getElementById('cfgBase').value = j.baseUrl || '';
+      document.getElementById('cfgModel').value = j.model || '';
+      document.getElementById('cfgKey').placeholder = j.hasKey ? ('已配置 ' + j.mask + '（留空不改）') : 'sk-…';
+      if (j.hasKey) cfgSay('当前：' + j.model + ' · ' + j.mask, 'ok');
+      else cfgSay('还没有配置 API Key。', 'err');
+    }).catch(function(e){ cfgSay('读取配置失败：' + e.message, 'err'); });
+  }
+  document.getElementById('cfgBtn').addEventListener('click', function(){ cfgOpen(); cfgLoad(); });
+  document.getElementById('cfgClose').addEventListener('click', cfgClose);
+  cfgModal.addEventListener('click', function(e){ if (e.target === cfgModal) cfgClose(); });
+  /* 关于 / 合规弹窗 */
+  var aboutModal = document.getElementById('aboutModal');
+  function aboutOpenFn(){ aboutModal.classList.add('on'); }
+  function aboutCloseFn(){ aboutModal.classList.remove('on'); }
+  document.getElementById('aboutOpen').addEventListener('click', aboutOpenFn);
+  document.getElementById('aboutOpenL').addEventListener('click', aboutOpenFn);
+  document.getElementById('aboutClose').addEventListener('click', aboutCloseFn);
+  aboutModal.addEventListener('click', function(e){ if (e.target === aboutModal) aboutCloseFn(); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && aboutModal.classList.contains('on')) aboutCloseFn(); });
+  document.querySelectorAll('[data-prov]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var p = PRESETS[this.dataset.prov];
+      if (!p) return;
+      document.getElementById('cfgBase').value = p[0];
+      document.getElementById('cfgModel').value = p[1];
+      cfgSay('已填入 ' + this.textContent + ' 的默认地址与模型，还差一个 Key。');
+    });
+  });
+  document.getElementById('cfgSave').addEventListener('click', function(){
+    var vBase = document.getElementById('cfgBase').value.trim() || 'https://api.deepseek.com/v1';
+    var vModel = document.getElementById('cfgModel').value.trim() || 'deepseek-chat';
+    var vKey = document.getElementById('cfgKey').value.trim();
+    if (DIRECT){
+      var old = cfgStore();
+      if (!cfgStoreSave({ baseUrl: vBase, model: vModel, apiKey: vKey || old.apiKey || '' })){
+        cfgSay('这个浏览器不允许本地存储，无法保存。', 'err'); return;
+      }
+      cfgSay('已保存在本机浏览器 ✓ 正在重新加载当前节点…', 'ok');
+      LECTURES = {};
+      if (typeof currentId !== 'undefined' && currentId) setTimeout(function(){ openNode(currentId, false); }, 400);
+      return;
+    }
+    if (!LIVE){ cfgSay('还没有连上任何模式，无法保存。', 'err'); return; }
+    cfgSay('保存中…');
+    fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        baseUrl: document.getElementById('cfgBase').value,
+        model: document.getElementById('cfgModel').value,
+        apiKey: document.getElementById('cfgKey').value
+      })
+    }).then(function(r){ return r.json(); }).then(function(j){
+      if (!j.ok){ cfgSay(j.error || '保存失败', 'err'); return; }
+      document.getElementById('cfgKey').value = '';
+      document.getElementById('cfgKey').placeholder = j.hasKey ? ('已配置 ' + j.mask + '（留空不改）') : 'sk-…';
+      cfgSay('已保存 ✓ 正在重新加载当前节点…', 'ok');
+      LECTURES = {};
+      if (typeof currentId !== 'undefined' && currentId) setTimeout(function(){ openNode(currentId, false); }, 500);
+    }).catch(function(e){ cfgSay('保存失败：' + e.message, 'err'); });
+  });
+  document.getElementById('cfgTest').addEventListener('click', function(){
+    if (DIRECT){
+      var c = cfgStore();
+      var k = document.getElementById('cfgKey').value.trim() || c.apiKey || '';
+      if (!k){ cfgSay('还没有配置 API Key。', 'err'); return; }
+      cfgSay('正在测试…');
+      fetch(stripSlash(document.getElementById('cfgBase').value.trim() || c.baseUrl || 'https://api.deepseek.com/v1') + '/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k },
+        body: JSON.stringify({ model: document.getElementById('cfgModel').value.trim() || c.model || 'deepseek-chat', messages: [{ role: 'user', content: '只回复两个字：可以' }] })
+      }).then(function(r){
+        return r.text().then(function(t){
+          if (!r.ok){ cfgSay('连接失败 HTTP ' + r.status + '：' + t.slice(0, 180), 'err'); return; }
+          var j = {}; try { j = JSON.parse(t); } catch (e) {}
+          var s = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+          cfgSay('连接成功 ✓ 模型回了：' + (s || '(空)'), 'ok');
+        });
+      }).catch(function(e){ cfgSay('连接失败：' + e.message, 'err'); });
+      return;
+    }
+    if (!LIVE){ cfgSay('还没有连上任何模式，无法测试。', 'err'); return; }
+    cfgSay('正在测试…');
+    fetch('/api/test', { method:'POST' }).then(function(r){ return r.json(); }).then(function(j){
+      if (j.ok) cfgSay('连接成功 ✓ 模型回了：' + (j.sample || ''), 'ok');
+      else cfgSay('连接失败：' + j.error, 'err');
+    }).catch(function(e){ cfgSay('测试失败：' + e.message, 'err'); });
+  });
+  setTimeout(function(){
+    whenMode(function(){
+      if (DIRECT){ if (!cfgStore().apiKey) cfgOpen(); return; }
+      if (LIVE){ fetch('/api/health').then(function(r){ return r.json(); }).then(function(j){ if (!j.hasKey) cfgOpen(); }).catch(function(){}); }
+    });
+  }, 1000);
+
+  var mergeMode = false;
+  var mergeBtn = document.getElementById('mergeBtn');
+  mergeBtn.addEventListener('click', function(){
+    mergeMode = !mergeMode;
+    mergeBtn.classList.toggle('active', mergeMode);
+    showToast(mergeMode ? '合并模式：把一个星团拖到另一个上面' : '已退出合并模式');
+  });
+  onClusterDrop = function(srcId){
+    if (!mergeMode) return;
+    var src = CLUSTERS[srcId];
+    if (!src) return;
+    var best = null, bestD = 1e9;
+    for (var cid in CLUSTERS){
+      if (cid === srcId) continue;
+      var c = CLUSTERS[cid];
+      var dx = c.cx - src.cx, dy = c.cy - src.cy;
+      var d = Math.sqrt(dx*dx + dy*dy);
+      if (d < bestD){ bestD = d; best = c; }
+    }
+    if (best && bestD < 720){
+      pending = { type:'cluster', src:srcId, dst:best.id };
+      openCard('这两个问题要合成一个吗', '「' + shortLabel(src.name,10) + '」 ＋ 「' + shortLabel(best.name,10) + '」', '合并', '还是分开');
+    } else {
+      showToast('把它拖到另一个星团上面，就能合并');
+    }
+  };
+  document.getElementById('zIn').addEventListener('click', function(){
+    setView((viewport.clientWidth/2 - V.px)/V.k, (viewport.clientHeight/2 - V.py)/V.k, clamp(V.k*1.35,0.2,2.6), true);
+  });
+  document.getElementById('zOut').addEventListener('click', function(){
+    setView((viewport.clientWidth/2 - V.px)/V.k, (viewport.clientHeight/2 - V.py)/V.k, clamp(V.k/1.35,0.2,2.6), true);
+  });
+  document.getElementById('fitBtn').addEventListener('click', fitAll);
+  document.getElementById('homeBtn').addEventListener('click', function(){
+    uni.classList.remove('on');
+    landing.classList.remove('gone');
+    panel.classList.remove('open');
+    currentId = null; laneForced = false; autoLanes(); refreshVisibility();
+  });
+  document.getElementById('closeBtn').addEventListener('click', function(){
+    panel.classList.remove('open'); currentId = null; autoLanes(); refreshVisibility();
+  });
+  document.getElementById('regenBtn').addEventListener('click', function(){
+    if (!currentId) return;
+    var rn = NODES[currentId];
+    if (!rn) return;
+    if (!LIVE && !DIRECT){
+      showToast('离线模拟模式：双击打开时请先在「设置」里填 API Key');
+      return;
+    }
+    delete LECTURES[currentId];                       /* 清前端缓存 */
+    this.classList.add('spin');
+    renderLive(rn, CLUSTERS[rn.cluster], true);       /* true = 绕过服务端缓存 */
+    showToast('正在重新生成…');
+  });
+  function askDelete(id){
+    var n = NODES[id];
+    if (!n) return;
+    var cl = CLUSTERS[n.cluster], whole = !n.parentId;
+    var cnt = (whole && cl) ? cl.nodeIds.length : subtreeIds(id).length;
+    pending = { type:'delete', id:id };
+    openCard('确定要删除吗',
+      whole ? ('「' + shortLabel(n.label, 14) + '」是这个问题原点 —— 删掉它，整个星团里的 ' + cnt + ' 个节点会一起消失。')
+            : ('「' + shortLabel(n.label, 14) + '」和它下游的 ' + (cnt - 1) + ' 个节点会一起消失。'),
+      '删除', '算了');
+  }
+  askDeleteHook = askDelete;
+  function doDelete(id){
+    var n = NODES[id];
+    var lb = n ? shortLabel(n.label, 12) : '';
+    var r = deleteNodeAt(id);
+    mount(); buildMenu(); refreshVisibility(); autoLanes();
+    if (!Object.keys(CLUSTERS).length){
+      uni.classList.remove('on'); landing.classList.remove('gone'); started = false; currentId = null;
+      panel.classList.remove('open'); setView(0, 0, 1, false);
+    } else {
+      layoutAll(true);
+    }
+    updateMinimap(); scheduleSave();
+    showToast('已删除「' + lb + '」· 共 ' + r.n + ' 个节点');
+  }
+  document.getElementById('delBtn').addEventListener('click', function(){ if (currentId) askDelete(currentId); });
+  document.addEventListener('keydown', function(e){
+    if (!currentId) return;
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') askDelete(currentId);
+  });
+  document.querySelectorAll('#ptabs button').forEach(function(b){
+    b.addEventListener('click', function(){ setTab(this.dataset.tab); });
+  });
+  document.getElementById('backBtn').addEventListener('click', function(){
+    var prev = historyStack.pop();
+    if (prev){ openNode(prev, false); focusNode(prev, Math.max(V.k,1.0)); }
+  });
+  window.addEventListener('resize', function(){ apply(); });
+});
+</script>
+</body>
+</html>

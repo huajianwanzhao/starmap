@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>星图 · 双击运行可行性测试</title>
+<style>
+  :root{ --bg:#070912; --ink:#e9edf6; --muted:#7f8aa3; --ok:#6ee7a8; --bad:#ff8f8f; --warn:#ffce6e; --line:rgba(255,255,255,.14);
+    --font:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,sans-serif; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);padding:34px 22px 80px;line-height:1.7}
+  .wrap{max-width:820px;margin:0 auto}
+  h1{font-size:22px;font-weight:400;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:26px}
+  .box{border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:14px;background:rgba(255,255,255,.02)}
+  .box h2{font-size:14.5px;font-weight:500;margin:0 0 4px;display:flex;align-items:center;gap:10px}
+  .tag{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .tag.ok{color:var(--ok);border-color:rgba(110,231,168,.45);background:rgba(110,231,168,.08)}
+  .tag.bad{color:var(--bad);border-color:rgba(255,143,143,.45);background:rgba(255,143,143,.08)}
+  .tag.wait{color:var(--warn);border-color:rgba(255,206,110,.4)}
+  .why{color:var(--muted);font-size:12.5px;margin:0 0 10px}
+  .out{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:#c9d2e3;white-space:pre-wrap;word-break:break-all;background:rgba(0,0,0,.28);border-radius:9px;padding:11px 13px;min-height:20px}
+  .env{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#9fb0cd;white-space:pre-wrap;word-break:break-all}
+  input{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--ink);font-family:inherit;font-size:13px;outline:none;margin:8px 0 10px}
+  input:focus{border-color:#8aa4ff}
+  button{font-family:inherit;font-size:13px;padding:9px 17px;border-radius:999px;cursor:pointer;border:1px solid var(--line);background:none;color:var(--muted);transition:.22s}
+  button:hover{color:#fff;border-color:rgba(138,164,255,.7)}
+  button.primary{background:rgba(138,164,255,.2);border-color:rgba(138,164,255,.5);color:#dbe4fb}
+  .verdict{border-radius:14px;padding:16px 20px;margin-bottom:22px;font-size:14px;border:1px solid var(--line)}
+  .verdict.good{background:rgba(110,231,168,.09);border-color:rgba(110,231,168,.4)}
+  .verdict.bad{background:rgba(255,143,143,.09);border-color:rgba(255,143,143,.4)}
+  .verdict.wait{background:rgba(255,206,110,.07);border-color:rgba(255,206,110,.35)}
+  .foot{margin-top:26px;color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>双击运行可行性测试</h1>
+  <div class="sub">这个页面不依赖任何服务器。把文件双击打开，它会自己得出两个结论。</div>
+
+  <div class="verdict wait" id="verdict">正在测试…</div>
+
+  <div class="box">
+    <h2>运行环境 <span class="tag" id="envTag">读取中</span></h2>
+    <div class="env" id="env">—</div>
+  </div>
+
+  <div class="box">
+    <h2>① localStorage 能不能用 <span class="tag" id="tagLs">测试中</span></h2>
+    <p class="why">配置和星图要在刷新后还在，就得靠它。有些浏览器对 <b>file://</b> 页面的存储有限制。</p>
+    <div class="out" id="outLs">…</div>
+  </div>
+
+  <div class="box">
+    <h2>② 能不能跨域调用 DeepSeek <span class="tag" id="tagCors">测试中</span></h2>
+    <p class="why">用一个<b>假 Key</b> 发请求。如果浏览器能读到 401 的响应体，就说明跨域放行了；被 CORS 拦的话 fetch 会直接抛异常。</p>
+    <div class="out" id="outCors">…</div>
+  </div>
+
+  <div class="box">
+    <h2>③ 流式输出能不能work（可选，需要真 Key）<span class="tag" id="tagStream">未测试</span></h2>
+    <p class="why">整个产品的核心是"讲义一个字一个字流出来"。这一步需要真实 Key 才能验证。测试用的 Key <b>不会被保存</b>。</p>
+    <input id="key" type="password" placeholder="粘贴一个 API Key（测试完请自行清空输入框）" autocomplete="off" />
+    <button class="primary" id="runStream">真的调一次</button>
+    <div class="out" id="outStream" style="margin-top:12px">…</div>
+  </div>
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="primary" id="copy">复制全部结果</button>
+    <button id="again">重新测试</button>
+  </div>
+  <div class="foot">测完把结果发给我就行 —— 我据此决定用"单文件 HTML"还是"自解压 bat"。</div>
+</div>
+
+<script>
+var API = 'https://api.deepseek.com/v1/chat/completions';
+var FAKE = 'sk-fake-key-for-cors-test-000000000000';
+var results = { env:'', ls:'', cors:'', stream:'未测试' };
+var state = { ls:null, cors:null };
+
+function setTag(id, kind, text){
+  var el = document.getElementById(id);
+  el.className = 'tag ' + (kind || '');
+  el.textContent = text;
+}
+function setOut(id, text){ document.getElementById(id).textContent = text; }
+function verdict(){
+  var v = document.getElementById('verdict');
+  if (state.ls === null || state.cors === null){ v.className = 'verdict wait'; v.textContent = '正在测试…'; return; }
+  if (state.ls && state.cors){
+    v.className = 'verdict good';
+    v.textContent = '结论：可以用单文件 HTML。双击就能跑，不需要安装任何东西 —— 配置存在浏览器里，API 直接从浏览器调。';
+  } else if (state.cors && !state.ls){
+    v.className = 'verdict wait';
+    v.textContent = '结论：跨域通过，但本地存储不可用。单文件仍能跑，只是配置和星图刷新后会丢 —— 要么每次重填 Key，要么退回"自解压 bat + 本地服务"。';
+  } else {
+    v.className = 'verdict bad';
+    v.textContent = '结论：跨域被浏览器拦住了，单文件 HTML 这条路走不通。需要用"自解压 bat + 本地服务"（需要一个 Node 环境）。';
+  }
+  results.env = document.getElementById('env').textContent;
+}
+
+/* 环境 */
+(function(){
+  var e = '协议: ' + location.protocol + '\nOrigin: ' + (location.origin === 'null' ? 'null（这是 file:// 页面的正常表现）' : location.origin) + '\nUA: ' + navigator.userAgent;
+  setOut('env', e);
+  setTag('envTag', '', '已读取');
+})();
+
+/* ① localStorage */
+(function(){
+  try {
+    var k = '__starmap_probe__';
+    var val = 'hello-中文-' + Date.now();
+    localStorage.setItem(k, val);
+    var back = localStorage.getItem(k);
+    localStorage.removeItem(k);
+    if (back === val){
+      state.ls = true;
+      setTag('tagLs', 'ok', '通过');
+      setOut('outLs', '写入并读回成功，中文与时间戳都一致。\n→ 配置、星团、讲义缓存都可以放在这里。');
+    } else {
+      state.ls = false;
+      setTag('tagLs', 'bad', '不一致');
+      setOut('outLs', '写进去的是：' + val + '\n读出来的是：' + back + '\n→ 存储被限制了。');
+    }
+  } catch (err){
+    state.ls = false;
+    setTag('tagLs', 'bad', '不可用');
+    setOut('outLs', '抛异常：' + err.name + ' — ' + err.message + '\n→ file:// 下这个浏览器不允许本地存储。');
+  }
+  verdict();
+})();
+
+/* ② 跨域 */
+(function(){
+  setOut('outCors', '正在发请求…');
+  fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + FAKE },
+    body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: 'ping' }] })
+  }).then(function(res){
+    return res.text().then(function(t){
+      state.cors = true;
+      setTag('tagCors', 'ok', '通过');
+      setOut('outCors', '成功读到响应！\nHTTP 状态：' + res.status + '（401 是预期的，因为用的是假 Key）\n响应体：' + t.slice(0, 200) + '\n\n→ 关键不是 401，而是"浏览器读到了它"。这说明 CORS 放行、预检通过、authorization 头被允许。');
+      verdict();
+    });
+  }).catch(function(err){
+    state.cors = false;
+    setTag('tagCors', 'bad', '被拦截');
+    setOut('outCors', 'fetch 抛异常：' + err.name + ' — ' + err.message + '\n\n→ 浏览器在跨域这一步就拦住了，读不到任何响应。单文件直连这条路不通。');
+    verdict();
+  });
+})();
+
+/* ③ 真实流式调用 */
+document.getElementById('runStream').addEventListener('click', function(){
+  var key = document.getElementById('key').value.trim();
+  if (!key){ setOut('outStream', '请先粘贴一个 API Key。'); return; }
+  setTag('tagStream', 'wait', '请求中');
+  setOut('outStream', '正在请求…');
+  var t0 = Date.now();
+  fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: '只回复两个字：可以' }], stream: true })
+  }).then(function(res){
+    if (!res.ok){
+      return res.text().then(function(t){
+        state.stream = 'HTTP ' + res.status;
+        setTag('tagStream', 'bad', 'HTTP ' + res.status);
+        setOut('outStream', 'HTTP ' + res.status + '\n' + t.slice(0, 300));
+      });
+    }
+    if (!res.body || !res.body.getReader){
+      state.stream = '不支持流式';
+      setTag('tagStream', 'bad', '不支持流式');
+      setOut('outStream', '响应正常，但浏览器没有 res.body.getReader —— 无法流式读取，只能整段等待。');
+      return;
+    }
+    var reader = res.body.getReader(), dec = new TextDecoder(), buf = '', full = '', chunks = 0, firstAt = 0;
+    function pump(){
+      return reader.read().then(function(r){
+        if (r.done){
+          var dt = Date.now() - t0;
+          state.stream = 'ok 首块 ' + firstAt + 'ms / 共 ' + chunks + ' 块 / ' + dt + 'ms';
+          setTag('tagStream', 'ok', '通过');
+          setOut('outStream', '首块到达：' + firstAt + ' ms\n共收到：' + chunks + ' 个数据块\n总耗时：' + dt + ' ms\n\n解析出的回答：' + (full || '(空)') + '\n\n→ 流式可用，讲义可以"一个字一个字写出来"。');
+          return;
+        }
+        if (!firstAt) firstAt = Date.now() - t0;
+        chunks++;
+        buf += dec.decode(r.value, { stream: true });
+        var i;
+        while ((i = buf.indexOf('\n')) >= 0){
+          var line = buf.slice(0, i).trim();
+          buf = buf.slice(i + 1);
+          if (line.slice(0, 5) !== 'data:') continue;
+          var d = line.slice(5).trim();
+          if (d === '[DONE]') continue;
+          try {
+            var j = JSON.parse(d);
+            var c = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+            if (c) full += c;
+          } catch (e){}
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(function(err){
+    state.stream = '异常';
+    setTag('tagStream', 'bad', '异常');
+    setOut('outStream', 'fetch 抛异常：' + err.name + ' — ' + err.message);
+  });
+});
+
+/* 复制结果 */
+document.getElementById('copy').addEventListener('click', function(){
+  var txt = [
+    '=== 星图 · 双击可行性测试 ===',
+    '【环境】', document.getElementById('env').textContent,
+    '',
+    '【① localStorage】', (state.ls === true ? 'PASS' : state.ls === false ? 'FAIL' : '未测'), document.getElementById('outLs').textContent,
+    '',
+    '【② 跨域 DeepSeek】', (state.cors === true ? 'PASS' : state.cors === false ? 'FAIL' : '未测'), document.getElementById('outCors').textContent,
+    '',
+    '【③ 流式】', document.getElementById('outStream').textContent
+  ].join('\n');
+  var done = function(){ setOut('outEnvCopy', ''); };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){ alert('已复制，直接粘贴给我就行'); }, function(){ alert('复制失败，请手动选中页面文字'); });
+  } else {
+    alert('这个环境不支持自动复制，请手动选中页面文字发我');
+  }
+});
+document.getElementById('again').addEventListener('click', function(){ location.reload(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>自检 · 这个设备能不能跑星图</title>
+<style>
+  :root{ --bg:#070912; --ink:#e9edf6; --muted:#7f8aa3; --accent:#8aa4ff; --ok:#8fd6a8; --bad:#e2908f; }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
+       font:15px/1.85 "PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,sans-serif;
+       display:flex;align-items:center;justify-content:center;padding:26px}
+  .card{width:min(680px,100%)}
+  h1{font-size:22px;font-weight:600;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:26px}
+  .row{display:flex;gap:12px;padding:11px 0;border-top:1px solid rgba(255,255,255,.09)}
+  .k{flex:0 0 132px;color:#5b6479;font-size:12px;letter-spacing:.06em;padding-top:3px}
+  .v{flex:1;word-break:break-all;font-size:13.5px}
+  .big{font-size:16px;font-weight:600;margin:26px 0 8px;padding:14px 16px;border-radius:12px;
+       border:1px solid rgba(255,255,255,.14)}
+  .big.wait{color:var(--muted);border-color:rgba(255,255,255,.14)}
+  .big.ok{color:var(--ok);border-color:rgba(143,214,168,.45);background:rgba(143,214,168,.07)}
+  .big.bad{color:var(--bad);border-color:rgba(226,144,143,.45);background:rgba(226,144,143,.07)}
+  .note{color:var(--muted);font-size:12.5px;margin-top:18px;line-height:1.9}
+  code{font-family:ui-monospace,Consolas,monospace;color:#c9d6f3;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:5px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>自检</h1>
+  <div class="sub">把它和「星图.html」一起放到同一个文件夹，用同一个浏览器打开。</div>
+
+  <div class="big ok">① 这份文件本身看得见 —— HTML / CSS 渲染正常。</div>
+  <div class="big wait" id="verdict">② 正在检测 JavaScript…<br><span style="font-weight:400;font-size:13px">如果这几秒后还是这句话，说明这个浏览器<b>没有执行 JavaScript</b>。</span></div>
+
+  <div class="row"><div class="k">地址协议</div><div class="v" id="proto">（要 JS 才能读到）</div></div>
+  <div class="row"><div class="k">浏览器</div><div class="v" id="ua">（要 JS 才能读到）</div></div>
+  <div class="row"><div class="k">屏幕 / 窗口</div><div class="v" id="size">（要 JS 才能读到）</div></div>
+  <div class="row"><div class="k">触摸屏</div><div class="v" id="touch">（要 JS 才能读到）</div></div>
+  <div class="row"><div class="k">本地存储</div><div class="v" id="ls">（要 JS 才能读到）</div></div>
+  <div class="row"><div class="k">能否连模型接口</div><div class="v" id="net">（要 JS 才能读到）</div></div>
+
+  <div class="note">
+    上面的判定如果是「没有执行 JavaScript」，那么<b>星图在这个设备上不会响应任何点击</b> —— 不是星图坏了，
+    是这个浏览器（或文件管理器 / 微信的内置预览）把脚本关掉了。<br>
+    手机上的「快速查看 / 预览」几乎都会关掉脚本；想在手机上用，得从电脑起一个局域网服务，
+    用 <code>http://电脑IP:5173</code> 打开。
+  </div>
+</div>
+
+<script>
+function set(id, txt){ try { document.getElementById(id).textContent = txt; } catch (e) {} }
+
+/* 只要走到这里，JS 就是活的 */
+try {
+  var v = document.getElementById('verdict');
+  v.className = 'big ok';
+  v.innerHTML = '② JavaScript：<b>正在运行</b> —— 这个浏览器可以跑星图。';
+} catch (e) {}
+
+set('proto', location.protocol + (location.protocol === 'file:' ? '  （本地文件，星图的 Key 存在浏览器里）' : '  （走网络）'));
+set('ua', navigator.userAgent);
+set('size', '屏幕 ' + screen.width + '×' + screen.height + ' · 窗口 ' + window.innerWidth + '×' + window.innerHeight + ' · 像素比 ' + (window.devicePixelRatio || 1));
+set('touch', ('ontouchstart' in window) ? '有（手指能点，但没有鼠标拖拽/滚轮缩放）' : '没有');
+
+try {
+  localStorage.setItem('starmap.selftest', '汉字测试 ' + Date.now());
+  var back = localStorage.getItem('starmap.selftest');
+  set('ls', back ? ('可以读写 ✓ —— ' + back) : '写进去读不出来 ✗');
+} catch (e) {
+  set('ls', '不可用 ✗ —— ' + e.message + '（星图仍然能用，只是每次刷新都得重新填 Key、星图不会自动保存）');
+}
+
+/* 只做一次极轻的连通性探测，拿不到响应也算结果（能返回 401 就说明网络通） */
+try {
+  fetch('https://api.deepseek.com/v1/models', { method: 'GET' }).then(function(r){
+    set('net', '有响应（HTTP ' + r.status + '）—— 能连上，缺 Key 而已');
+  }).catch(function(e){
+    set('net', '连不上 ✗ —— ' + (e && e.message ? e.message : e) + '（没网、或这个环境的跨域被拦）');
+  });
+} catch (e) {
+  set('net', '发起不了请求 ✗ —— ' + e.message);
+}
+</script>
+</body>
+</html>

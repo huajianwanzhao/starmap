@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>星图 · 技术页</title>
+<style>
+  body{margin:0;background:#080b13;color:#e6ebf7;font-family:system-ui,-apple-system,'Microsoft YaHei',sans-serif}
+  .wrap{max-width:1300px;margin:0 auto;padding:48px 32px 80px}
+  h1{font-size:24px;font-weight:600;margin:0 0 8px}
+  .sub{color:#8b95ad;font-size:13px;margin-bottom:36px;line-height:1.8}
+  .item{margin-bottom:52px}
+  .cap{font-size:12px;letter-spacing:.2em;color:#5f6b84;margin-bottom:12px}
+  img{width:100%;display:block;border-radius:14px;border:1px solid #1e2740}
+  .tip{background:#0f1523;border:1px solid #1e2740;border-radius:12px;padding:16px 20px;font-size:12.5px;color:#8b95ad;line-height:1.9}
+</style></head>
+<body><div class="wrap">
+  <h1>星图 · 技术页</h1>
+  <div class="sub">三张图，直接截进 PPT。也可以右键图片「另存为」—— PowerPoint 支持直接插入 .svg。</div>
+  <div class="item"><div class="cap">① SYSTEM ARCHITECTURE</div><img src="01-architecture.svg" alt="架构图"></div>
+  <div class="item"><div class="cap">② DATA MODEL</div><img src="02-er.svg" alt="ER 图"></div>
+  <div class="item"><div class="cap">③ DATA FLOW</div><img src="03-dataflow.svg" alt="数据流图"></div>
+  <div class="tip">
+    <b>讲解顺序建议</b>：先讲架构图那句「Key 只存在于中间那一层」→ 再讲 ER 图里 lectures 为什么是概念级缓存 → 最后用数据流图收尾，落在「四层缓存，命中任何一层都不消耗 token」。
+  </div>
+</div></body></html>

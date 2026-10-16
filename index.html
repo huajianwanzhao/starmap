@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0; url=prototype/03-live.html">
+<link rel="canonical" href="prototype/03-live.html">
+<title>星图 · 正在进入</title>
+<style>
+  html,body{height:100%;margin:0;background:#070912;color:#e9edf6;
+    font:15px/1.7 -apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;
+    display:flex;align-items:center;justify-content:center}
+  a{color:#8aa4ff}
+  .b{text-align:center;max-width:34em;padding:0 24px}
+  .d{width:9px;height:9px;border-radius:50%;background:#8aa4ff;display:inline-block;
+     margin-right:9px;box-shadow:0 0 18px #8aa4ff;animation:p 1.4s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:.45}50%{opacity:1}}
+  p{margin:0 0 14px}
+  small{color:#7f8aa3}
+</style>
+</head>
+<body>
+  <div class="b">
+    <p><span class="d"></span><b>正在进入星图</b></p>
+    <p><small>没有自动跳转？<a href="prototype/03-live.html">点这里</a></small></p>
+  </div>
+  <script>location.replace('prototype/03-live.html');</script>
+</body>
+</html>

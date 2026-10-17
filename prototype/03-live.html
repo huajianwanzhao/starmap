@@ -337,6 +337,31 @@
   .toast.act{pointer-events:auto;display:flex;align-items:center;gap:12px}
   .toast .tact{background:rgba(196,150,255,.2);border:1px solid rgba(196,150,255,.5);color:#e6d6ff;font-family:inherit;font-size:12px;padding:4px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
   .toast .tact:hover{background:rgba(196,150,255,.36)}
+
+  /* ===== 双链：手动连上的两个节点，让 AI 说一句它们是什么关系 ===== */
+  .lrel{margin:8px 0 0;padding:10px 13px;border-radius:10px;border:1px solid rgba(196,150,255,.26);background:rgba(196,150,255,.06);max-width:100%}
+  .lrel .lrt{display:inline-block;font-size:11px;letter-spacing:.04em;padding:2px 9px;border-radius:999px;background:rgba(196,150,255,.18);border:1px solid rgba(196,150,255,.44);color:#ecdcff;margin-right:8px;vertical-align:1px}
+  .lrel p{margin:0;font-size:13px;line-height:1.85;color:#d9cbf2;display:inline}
+  .lrel .lrp{font-size:13px;line-height:1.85;color:#d9cbf2;margin:0}
+  .lrel .lrs{font-size:12px;color:#8f82ad;margin:6px 0 0}
+  .lrel button{background:none;border:none;color:#b9a6e8;font-family:inherit;font-size:12px;padding:0;cursor:pointer;border-bottom:1px dashed rgba(185,166,232,.5)}
+  .lrel button:hover{color:#ecdcff;border-bottom-color:#ecdcff}
+  .lrel .lrbusy{color:#8f82ad;font-size:12px}
+  .lrel .lrtitle{display:inline-block;font-size:11.5px;color:#e8dbff;background:rgba(196,150,255,.14);border-radius:5px;padding:1px 6px;margin-right:7px;vertical-align:1px}
+  .lrel button.lrt{font-family:inherit;cursor:pointer;border:1px solid rgba(196,150,255,.44)}
+  .links line.cross.manual.labeled{stroke-dasharray:none;stroke-width:1.6;opacity:.9!important}
+
+  /* ===== 「最近弄懂的」 ===== */
+  .recentlist{margin:6px 0 0;max-height:54vh;overflow:auto;padding-right:4px}
+  .recentrow{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;background:rgba(138,164,255,.05);border:1px solid rgba(138,164,255,.16);border-radius:10px;padding:9px 12px;margin:0 0 7px;color:#cfd8ea;font-family:inherit;font-size:13px;cursor:pointer}
+  .recentrow:hover{background:rgba(138,164,255,.14);border-color:rgba(138,164,255,.4);color:#fff}
+  .recentrow.dead{opacity:.55;cursor:default}
+  .recentrow .rn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .recentrow .rm{font-size:11.5px;color:#7f8aa3;white-space:nowrap}
+  .recentrow .rd{width:7px;height:7px;border-radius:50%;flex:none;background:hsl(var(--h,222) 70% 66%)}
+  .recentrow .rk{font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid rgba(138,164,255,.35);color:#9fb0d0;white-space:nowrap}
+  .recentrow .rk.bad{border-color:rgba(224,150,150,.45);color:#e0a0a0}
+  .recentempty{font-size:12.5px;color:#8f9bb5;line-height:1.9;margin:8px 0 0}
   #diag{position:fixed;right:10px;bottom:10px;z-index:9999;font:12px/1.7 ui-monospace,Consolas,monospace;color:#a9bfe2;background:rgba(6,9,18,.9);border:1px solid #26314a;border-radius:10px;padding:8px 11px;max-width:52ch;white-space:pre-wrap;cursor:pointer;pointer-events:auto}
   #diag:empty{display:none}
 </style>
@@ -393,6 +418,7 @@
         <button id="zOut">−</button>
         <button id="zIn">＋</button>
         <button id="fitBtn">全景</button>
+        <button id="exportBtn" title="导出成 .md 文件夹（Obsidian 可直接打开）">导出</button>
         <button id="cfgBtn">设置</button>
       </div>
     </div>
@@ -462,7 +488,7 @@
       <div class="absec">
         <h4><span class="abi">⚑</span>你现在打开的是在线版</h4>
         <p>这一版没有服务端：页面直接在浏览器里调用模型接口（默认 DeepSeek），你填的 API Key 只写进<b>你这个浏览器的 localStorage</b>，不会上传到任何地方——除了它本来就要发给模型服务商的那次请求。</p>
-        <p>你长出来的星图、看过的讲义，同样只存在这个浏览器里。<b>换台电脑、换个浏览器、或者清一次浏览器数据，就会回到初始状态。</b>想让成果落成一个可以备份的文件，请用仓库里的服务端模式（<code>start-server.bat</code>），数据会写进本机的 <code>star.db</code>。</p>
+        <p>你长出来的星图、看过的讲义，同样只存在这个浏览器里。<b>换台电脑、换个浏览器、或者清一次浏览器数据，就会回到初始状态。</b>想让成果落成一个可以备份的文件，请用仓库里的服务端模式（<code>start-server.bat</code>），数据会写进本机的 <code>star.db</code>；也可以点顶栏的「导出」，把整张星图下载成 .md 文件夹。</p>
         <p>在线版的定位是「先试试看」；它和完整版共用同一份前端代码，功能一致。</p>
       </div>
 
@@ -503,6 +529,17 @@
 
       <div class="cfgacts">
         <button class="primary" id="aboutClose">知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cfgmodal" id="recentModal">
+    <div class="cfgcard">
+      <div class="cfgh">最近弄懂的</div>
+      <div class="cfgsub" id="recentSub">这张星图不是一次想出来的 —— 它是这些次点开累积出来的。</div>
+      <div class="recentlist" id="recentList"></div>
+      <div class="cfgacts">
+        <button class="primary" id="recentClose">关闭</button>
       </div>
     </div>
   </div>
@@ -558,6 +595,12 @@ function uid(){ return 'n' + (++seq); }
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 function hashStr(s){ var h=0; for (var i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) | 0; } return Math.abs(h); }
 function shortLabel(s, n){ n = n || 16; return s.length > n ? s.slice(0, n) + '…' : s; }
+/* 全局的 HTML 转义：面板、航线卡片、最近列表都要用（原来只在搜索框那个 IIFE 里有一份，外面调不到） */
+function escHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
+    return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+  });
+}
 
 /* 问题相似度：先剥掉疑问词和语气词，只留下"主题" */
 var STOPW = ['什么','是','的','吗','呢','怎么','怎样','如何','为什么','为啥','请问','意思','一下','到底','究竟','有哪些','介绍','请','我','想','要','搞懂','明白','了解'];
@@ -595,6 +638,8 @@ try {
     .then(function(j){ if (j && j.live) LIVE = true; else DIRECT = true; })
     .catch(function(){ DIRECT = true; });
 } catch (e) { DIRECT = true; modeReady = Promise.resolve(); }
+var BUILD = '2026-10-17c';
+try { console.log('%c 星图 build ' + BUILD, 'color:#8ab4f8;font-weight:bold'); } catch (e) {}
 function whenMode(fn){
   var done = false, once = function(){ if (!done){ done = true; fn(); } };
   (modeReady || Promise.resolve()).then(once).catch(once);
@@ -899,17 +944,6 @@ function mount(){
     });
     world.appendChild(d);
     n.el = d;
-  }
-  for (var cid in CLUSTERS){
-    var cl = CLUSTERS[cid];
-    if (cl.labelEl) continue;
-    var l = document.createElement('div');
-    l.className = 'clabel';
-    l.textContent = shortLabel(cl.name, 12);
-    l.style.left = cl.cx + 'px';
-    l.style.top  = (cl.cy - 300) + 'px';
-    world.appendChild(l);
-    cl.labelEl = l;
   }
   mmDirty = true;
   updateMinimap();
@@ -1226,6 +1260,163 @@ document.addEventListener('keydown', function(e){
   if (e.key === 'Escape' && lanePick){ clearPick(); showToast('已取消连线'); }
 });
 
+/* ---------- 双链：让 AI 说清两个节点之间是什么关系 ----------
+   只回两行 ##TITLE / ##REL。和 server.js 的 LINK_RULES 逐字一致，
+   否则经服务端和双击打开会给两种结果。 */
+var LINK_RULES_CLIENT = [
+  '你在帮用户把一个知识星图上的两个节点连起来。用户认为它们有关系，你要用一句话说清是什么关系，并给它一个短名字。',
+  '',
+  '【输出格式：只有两行，不要任何其他文字，不要 markdown，不要代码块】',
+  '##TITLE <不超过 12 个字，能当这条连线标签用的短名，例如「同一个硬币的两面」>',
+  '##REL <一句话，不超过 40 字，说清 A 和 B 是什么关系>',
+  '',
+  '【硬性规则】',
+  '1. 关系必须是具体的：谁是谁的前提、谁是谁的特例、同一件事的两个层面、一个用来解释另一个……',
+  '2. 不许写「它们有关联」「互相影响」这类放在任何两个东西上都成立的空话。',
+  '3. 如果这两者其实没有真正的关系，就在 ##REL 里直说「严格说这两者没有直接关系」，不要硬编。',
+  '4. 不要分别复述 A 是什么、B 是什么 —— 只讲它们之间。'
+].join('\n');
+
+function parseLinkText(t){
+  var o = { title: '', rel: '' };
+  var ls = String(t || '').split('\n');
+  for (var i = 0; i < ls.length; i++){
+    var s = ls[i].trim();
+    if (s.indexOf('##TITLE') === 0) o.title = s.slice(7).trim();
+    else if (s.indexOf('##REL') === 0) o.rel = s.slice(5).trim();
+  }
+  return o;
+}
+
+function askLaneRel(key){
+  var q = String(key).split('|'), a = q[0], b = q[1];
+  var na = NODES[a], nb = NODES[b];
+  if (!na || !nb) return;
+  var box = pbody.querySelector('[data-lrel="' + key + '"]');
+  if (!box) return;
+  if (!laneEdge(a, b)) addManualLane(a, b);
+  var line = laneEdge(a, b);
+  var acc = '';
+
+  function paint(txt, busy){
+    var o = parseLinkText(txt);
+    var el = box.querySelector('.lrp');
+    if (!el){ el = document.createElement('p'); el.className = 'lrp'; box.appendChild(el); }
+    if (o.rel){
+      el.classList.remove('lrbusy');
+      el.innerHTML = (o.title ? '<span class="lrtitle">' + escHtml(o.title) + '</span>' : '') + escHtml(o.rel);
+    } else if (busy){
+      el.classList.add('lrbusy');
+      el.textContent = o.title ? ('「' + o.title + '」…') : '正在想这两个之间是什么关系…';
+    }
+  }
+  function feed(chunk){ acc += chunk; paint(acc, true); }
+
+  function done(txt){
+    var o = parseLinkText(txt);
+    if (!o.rel){
+      paint(acc, false);
+      var el = box.querySelector('.lrp');
+      if (el){ el.classList.add('lrbusy'); el.textContent = '这一句没接上，再点一次试试。'; }
+      return;
+    }
+    line.rel = o.rel;
+    line.rt = o.title || '';
+    if (line.el) line.el.classList.add('labeled');
+    paint(txt, false);
+    var lrs = box.querySelector('.lrs');
+    if (lrs){ lrs.innerHTML = '<button data-lrel-go="' + key + '">让它再说一句</button> · <button class="lrnew" data-lrel-cut="' + key + '">断掉这条线</button>'; }
+    bindLrelBox(box, key);
+    scheduleSave();
+    showToast('这条线有名字了：' + shortLabel(o.title || o.rel, 18));
+  }
+  function fail(msg){
+    var el = box.querySelector('.lrp');
+    if (el){ el.classList.add('lrbusy'); el.textContent = '生成失败：' + msg; }
+  }
+
+  paint('', true);
+
+  if (DIRECT){
+    var cfg = cfgStore(), key0 = cfg.apiKey || '';
+    if (!key0){ fail('还没有配置 API Key'); if (typeof cfgOpen === 'function') cfgOpen(); return; }
+    fetch(stripSlash(cfg.baseUrl || 'https://api.deepseek.com/v1') + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key0 },
+      body: JSON.stringify({
+        model: cfg.model || 'deepseek-chat',
+        messages: [{ role: 'system', content: LINK_RULES_CLIENT },
+                   { role: 'user', content: '节点 A：' + na.label + '\n节点 B：' + nb.label + '\n\n这两者之间是什么关系？' }],
+        stream: true, temperature: 0.5
+      })
+    }).then(function(res){
+      if (!res.ok) return res.text().then(function(t){ throw new Error('HTTP ' + res.status + ' · ' + t.slice(0, 120)); });
+      var rd = res.body.getReader(), dec = new TextDecoder(), sse = '';
+      function pump(){
+        return rd.read().then(function(r){
+          if (r.done){ done(acc); return; }
+          sse += dec.decode(r.value, { stream: true });
+          var i, out = '';
+          while ((i = sse.indexOf('\n')) >= 0){
+            var ln = sse.slice(0, i).trim(); sse = sse.slice(i + 1);
+            if (ln.slice(0, 5) !== 'data:') continue;
+            var dd = ln.slice(5).trim();
+            if (dd === '[DONE]') continue;
+            try { var j = JSON.parse(dd); var c = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content; if (c) out += c; } catch (e) {}
+          }
+          if (out) feed(out);
+          return pump();
+        });
+      }
+      return pump();
+    }).catch(function(e){ fail(e && e.message ? e.message : String(e)); });
+    return;
+  }
+
+  var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  var guard = setTimeout(function(){
+    if (ctl) ctl.abort();
+    fail('等了 45 秒还没回话（/api/link）。看看 server.js 是不是还在跑。');
+  }, 45000);
+  fetch('/api/link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ a: na.label, b: nb.label, nodeId: a, topic: (CLUSTERS[na.cluster] || {}).name || '' }),
+    signal: ctl ? ctl.signal : undefined
+  }).then(function(res){
+    if (!res.ok){
+      return res.text().then(function(t){ throw new Error('HTTP ' + res.status + ' · ' + String(t).slice(0, 120)); });
+    }
+    if (!res.body) throw new Error('浏览器拿不到流式响应');
+    var rd = res.body.getReader(), dec = new TextDecoder();
+    function pump(){
+      return rd.read().then(function(r){
+        if (r.done){ clearTimeout(guard); done(acc); return; }
+        feed(dec.decode(r.value, { stream: true }));
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(function(e){
+    clearTimeout(guard);
+    if (e && e.name === 'AbortError') return;
+    if (window.console && console.error) console.error('[link]', e);
+    fail(e && e.message ? e.message : String(e));
+  });
+}
+
+/* 卡片里的小按钮绑定（openNode 里统一绑一次，重说之后就地重绑这一次） */
+function bindLrelBox(box, key){
+  var go = box.querySelector('[data-lrel-go]');
+  if (go) go.onclick = function(){ askLaneRel(this.dataset.lrelGo); };
+  var cut = box.querySelector('[data-lrel-cut]');
+  if (cut) cut.onclick = function(){
+    var q2 = this.dataset.lrelCut.split('|');
+    removeManualLane(q2[0], q2[1]);
+    scheduleSave(); openNode(q2[0], false); showToast('这条线断掉了');
+  };
+}
+
 /* ============ 聚焦模式：只显示你走过的路 ============ */
 var focusMode = true, hiddenIds = {};
 function refreshVisibility(){
@@ -1361,15 +1552,22 @@ function openNode(id, push){
   }
 
   if (n.manualIds && n.manualIds.length){
-    html += '<div class="kickerline">你手动连上的</div>';
-    html += '<p class="lanenote">这些是你在航线模式里亲手连起来的 —— AI 没看到的关系，你看到了。</p>';
-    html += '<div class="drills">';
     for (var mq=0; mq<n.manualIds.length; mq++){
       var mo = NODES[n.manualIds[mq]];
       if (!mo) continue;
-      html += '<button class="lane" data-jump="' + mo.id + '">⌁ ' + shortLabel(mo.label, 12) + '</button>';
+      var le = laneEdge(n.id, mo.id) || {};
+      var lk = n.id + '|' + mo.id;
+      html += '<div class="lrel" data-lrel="' + lk + '">';
+      html += '<button class="lrt" data-jump="' + mo.id + '" title="带我去这个节点">⌁ ' + shortLabel(mo.label, 14) + '</button>';
+      if (le.rel){
+        html += '<p class="lrp">' + (le.rt ? '<span class="lrtitle">' + escHtml(le.rt) + '</span>' : '') + escHtml(le.rel) + '</p>';
+        html += '<p class="lrs"><button data-lrel-go="' + lk + '">让它再说一句</button> · <button data-lrel-cut="' + lk + '">断掉这条线</button></p>';
+      } else {
+        html += '<p class="lrp lrbusy">你连上了，但还没说清它俩是什么关系。</p>';
+        html += '<p class="lrs"><button data-lrel-go="' + lk + '">让 AI 说一句 →</button> · <button data-lrel-cut="' + lk + '">断掉这条线</button></p>';
+      }
+      html += '</div>';
     }
-    html += '</div>';
   }
 
   if (n.crossIds && n.crossIds.length){
@@ -1422,6 +1620,16 @@ function openNode(id, push){
       openNode(oid);
       focusNode(oid, Math.max(V.k, 0.9));
       pulse(oid);
+    });
+  });
+  pbody.querySelectorAll('[data-lrel-go]').forEach(function(t){
+    t.addEventListener('click', function(){ askLaneRel(this.dataset.lrelGo); });
+  });
+  pbody.querySelectorAll('[data-lrel-cut]').forEach(function(t){
+    t.addEventListener('click', function(){
+      var q = this.dataset.lrelCut.split('|');
+      removeManualLane(q[0], q[1]);
+      scheduleSave(); openNode(id, false); showToast('这条线断掉了');
     });
   });
   autoLanes();
@@ -1579,6 +1787,7 @@ function buildMenu(){
     out += '<button class="item" data-cluster="' + cid + '"><span><span class="cdot" style="background:hsl(' + cl.hue + ',70%,70%)"></span>' + shortLabel(cl.name, 18) + '</span><span class="meta">' + cl.nodeIds.length + ' 节点</span></button>';
   }
   out += '<div class="sep"></div>';
+  out += '<button class="item" data-act="recent"><span>最近弄懂的</span><span class="meta">你点开过的</span></button>';
   out += '<button class="item" data-act="fit"><span>回到全景</span><span class="meta">看整个宇宙</span></button>';
   var menu = document.getElementById('menu');
   menu.innerHTML = out;
@@ -1592,6 +1801,377 @@ function buildMenu(){
   menu.querySelector('[data-act="fit"]').addEventListener('click', function(){
     fitAll(); menu.classList.remove('open');
   });
+  var rmi = menu.querySelector('[data-act="recent"]');
+  if (rmi) rmi.addEventListener('click', function(){ menu.classList.remove('open'); openRecent(); });
+}
+
+
+/* ============ 出口：把这张星图变成一堆 .md ============
+   零依赖 store-only ZIP（不压缩，只打包）。不做压缩是因为没有内置的同步 deflate，
+   而几百 KB 文本压不压都一样；Windows 资源管理器、macOS 归档工具、Obsidian 都能直接打开。 */
+var CRC_TABLE = null;
+function crc32(u8){
+  if (!CRC_TABLE){
+    CRC_TABLE = new Uint32Array(256);
+    for (var i = 0; i < 256; i++){
+      var c = i;
+      for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      CRC_TABLE[i] = c >>> 0;
+    }
+  }
+  var crc = 0 ^ (-1);
+  for (var j = 0; j < u8.length; j++) crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ u8[j]) & 0xFF];
+  return (crc ^ (-1)) >>> 0;
+}
+function zipBuild(files){
+  var enc = new TextEncoder(), parts = [], central = [], off = 0, i;
+  for (i = 0; i < files.length; i++){
+    var f = files[i];
+    var data = (f.data instanceof Uint8Array) ? f.data : enc.encode(String(f.data));
+    var nb = enc.encode(f.name), crc = crc32(data);
+    var lh = new Uint8Array(30 + nb.length), dv = new DataView(lh.buffer);
+    dv.setUint32(0, 0x04034b50, true); dv.setUint16(4, 20, true); dv.setUint16(6, 0x0800, true);
+    dv.setUint16(8, 0, true); dv.setUint16(10, 0, true); dv.setUint16(12, 0x21, true);
+    dv.setUint32(14, crc, true); dv.setUint32(18, data.length, true); dv.setUint32(22, data.length, true);
+    dv.setUint16(26, nb.length, true); dv.setUint16(28, 0, true);
+    lh.set(nb, 30);
+    parts.push(lh, data);
+    var cd = new Uint8Array(46 + nb.length), dv2 = new DataView(cd.buffer);
+    dv2.setUint32(0, 0x02014b50, true); dv2.setUint16(4, 20, true); dv2.setUint16(6, 20, true);
+    dv2.setUint16(8, 0x0800, true); dv2.setUint16(10, 0, true); dv2.setUint16(12, 0, true);
+    dv2.setUint16(14, 0x21, true); dv2.setUint32(16, crc, true); dv2.setUint32(20, data.length, true);
+    dv2.setUint32(24, data.length, true); dv2.setUint16(28, nb.length, true);
+    dv2.setUint32(42, off, true);
+    cd.set(nb, 46);
+    central.push(cd);
+    off += lh.length + data.length;
+  }
+  var csize = 0;
+  for (i = 0; i < central.length; i++) csize += central[i].length;
+  var eo = new Uint8Array(22), dv3 = new DataView(eo.buffer);
+  dv3.setUint32(0, 0x06054b50, true); dv3.setUint16(8, files.length, true); dv3.setUint16(10, files.length, true);
+  dv3.setUint32(12, csize, true); dv3.setUint32(16, off, true);
+  var all = parts.concat(central); all.push(eo);
+  return new Blob(all, { type: 'application/zip' });
+}
+function safeName(s){
+  var t = String(s || ''), out = '';
+  for (var i = 0; i < t.length; i++){
+    var ch = t.charAt(i), c = t.charCodeAt(i);
+    if (c === 92 || ch === '/' || ch === ':' || ch === '*' || ch === '?' || ch === '<' || ch === '>' || ch === '|' || c === 10 || c === 13 || c === 9) out += ' ';
+    else out += ch;
+  }
+  out = out.split('  ').join(' ');
+  while (out.charAt(0) === ' ' || out.charAt(0) === '.') out = out.slice(1);
+  while (out.charAt(out.length - 1) === ' ' || out.charAt(out.length - 1) === '.') out = out.slice(0, -1);
+  if (!out) out = '未命名';
+  if (out.length > 56) out = out.slice(0, 56);
+  return out;
+}
+function yq(s){ return JSON.stringify(String(s == null ? '' : s)); }
+function pad2(x){ return x < 10 ? '0' + x : '' + x; }
+function stampStr(d){ return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+function fileStamp(d){ return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '-' + pad2(d.getHours()) + pad2(d.getMinutes()); }
+
+function nodeKindLabel(n){
+  return n.kind === 'question' ? '问题' : n.kind === 'fact' ? '事实' : n.kind === 'bridge' ? '关系' : '概念';
+}
+function nodeMd(n){
+  var cl = CLUSTERS[n.cluster] || {};
+  var L = LECTURES[n.id] || null;
+  var o = [], i;
+  o.push('---');
+  o.push('title: ' + yq(n.label));
+  o.push('cluster: ' + yq(cl.name || ''));
+  o.push('kind: ' + yq(nodeKindLabel(n)));
+  if (n.rel) o.push('rel: ' + yq(n.rel));
+  o.push('tags: [星图, ' + (cl.name || '未归类') + ']');
+  o.push('exported: ' + yq(stampStr(new Date())));
+  o.push('---');
+  o.push('');
+  o.push('# ' + n.label);
+  o.push('');
+  if (n.question){ o.push('> ' + n.question); o.push(''); }
+  if (n.why){ o.push('*' + n.why + '*'); o.push(''); }
+
+  if (L){
+    if (L.fact){ o.push('## 答案是'); o.push(''); o.push('**' + L.fact + '**'); o.push(''); }
+    if (L.common){ o.push('## 大多数人以为'); o.push(''); o.push(L.common); o.push(''); }
+    if (L.insight){ o.push('## 其实'); o.push(''); o.push(L.insight); o.push(''); }
+    if (L.scene){ o.push('## 一个画面'); o.push(''); o.push(L.scene); o.push(''); }
+    if (L.list && L.list.length){
+      o.push('## 清单'); o.push('');
+      for (i = 0; i < L.list.length; i++){
+        var it = L.list[i];
+        if (typeof it === 'string') o.push('- ' + it);
+        else o.push('- **' + it.item + '**' + (it.why ? ' —— ' + it.why : ''));
+      }
+      o.push('');
+    }
+    if (L.mechanism && L.mechanism.length){
+      o.push('## 它是怎么工作的'); o.push('');
+      for (i = 0; i < L.mechanism.length; i++){ o.push(L.mechanism[i]); o.push(''); }
+    }
+    if (L.formula){
+      o.push('## 公式'); o.push('');
+      o.push('    ' + (L.formula.tex || L.formula));
+      o.push('');
+      if (L.formula.symbols && L.formula.symbols.length){
+        for (i = 0; i < L.formula.symbols.length; i++) o.push('- **' + L.formula.symbols[i][0] + '** ' + L.formula.symbols[i][1]);
+        o.push('');
+      }
+    }
+    if (L.bounds){ o.push('## 它在什么时候失效'); o.push(''); o.push(L.bounds); o.push(''); }
+    if (L.misconceptions && L.misconceptions.length){
+      o.push('## 常见误解'); o.push('');
+      for (i = 0; i < L.misconceptions.length; i++) o.push('- ' + L.misconceptions[i]);
+      o.push('');
+    }
+    if (L.p && L.p.length){
+      for (i = 0; i < L.p.length; i++){ o.push(L.p[i]); o.push(''); }
+    }
+  } else {
+    o.push('*这个节点还没点开过，所以还没有讲义。打开它就能生成。*');
+    o.push('');
+  }
+
+  var par = n.parentId ? NODES[n.parentId] : null;
+  if (par){
+    o.push('## 来路'); o.push('');
+    o.push('- [[' + par.label + ']]' + (n.rel ? '（' + n.rel + '）' : ''));
+    o.push('');
+  }
+  if (n.children && n.children.length){
+    o.push('## 从它继续往下'); o.push('');
+    for (i = 0; i < n.children.length; i++){
+      var ch = NODES[n.children[i]];
+      if (!ch) continue;
+      o.push('- [[' + ch.label + ']]' + (ch.question ? ' —— ' + ch.question : ''));
+    }
+    o.push('');
+  }
+  if (n.manualIds && n.manualIds.length){
+    o.push('## 你亲手连上的'); o.push('');
+    for (i = 0; i < n.manualIds.length; i++){
+      var mo = NODES[n.manualIds[i]];
+      if (!mo) continue;
+      var le = laneEdge(n.id, mo.id) || {};
+      o.push('- [[' + mo.label + ']]' + (le.rel ? ' —— ' + (le.rt ? '**' + le.rt + '**：' : '') + le.rel : ''));
+    }
+    o.push('');
+  }
+  var cseen = {};
+  if (n.crossIds && n.crossIds.length){
+    var cx = [];
+    for (i = 0; i < n.crossIds.length; i++){
+      var co = NODES[n.crossIds[i]];
+      if (!co || cseen[co.cluster]) continue;
+      cseen[co.cluster] = 1; cx.push(co);
+    }
+    if (cx.length){
+      o.push('## 同一个概念，也出现在'); o.push('');
+      for (i = 0; i < cx.length; i++) o.push('- [[' + cx[i].label + ']]');
+      o.push('');
+    }
+  }
+  return o.join('\n');
+}
+function readmeMd(clusters, d){
+  var totalN = 0, i;
+  for (var k in NODES) totalN++;
+  var o = [];
+  o.push('# 星图导出 · ' + stampStr(d));
+  o.push('');
+  o.push('这是从「星图」里导出的一份纯文本副本：每张星图一个文件夹，每个节点一个 .md，');
+  o.push('节点之间的关系用 Obsidian 的双链语法写好了 —— 直接用 Obsidian 打开这个文件夹（Open folder as vault）就能看。');
+  o.push('');
+  o.push('- 星团：' + clusters.length);
+  o.push('- 节点：' + totalN);
+  o.push('- 连线：' + EDGES.length);
+  o.push('');
+  o.push('## 它是什么，不是什么');
+  o.push('');
+  o.push('星图记录的不是「我整理好的知识」，而是「我一路问下来的顺序」。');
+  o.push('所以这些笔记是毛坯：讲义由模型生成，可能有错，没有经过人工校对。');
+  o.push('把它当草稿本，不要当参考资料。');
+  o.push('');
+  o.push('## 目录');
+  o.push('');
+  for (i = 0; i < clusters.length; i++){
+    o.push('- ' + clusters[i]._dir + '/  （' + clusters[i].nodeIds.length + ' 节点，见 索引.md）');
+  }
+  o.push('');
+  o.push('同一层还有 星图.json：完整的结构与坐标，想再导回来或做别的处理时用它。');
+  o.push('');
+  return o.join('\n');
+}
+function indexMd(cl, nodes){
+  var o = [], i;
+  o.push('# ' + cl.name);
+  o.push('');
+  o.push('*这个星团里的 ' + nodes.length + ' 个节点。*');
+  o.push('');
+  for (i = 0; i < nodes.length; i++){
+    var n = nodes[i];
+    o.push('- [[' + n.label + ']]' + (n.question ? ' —— ' + n.question : ''));
+  }
+  o.push('');
+  return o.join('\n');
+}
+function downloadBlob(blob, name){
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1200);
+}
+function exportMarkdown(){
+  var now = new Date(), files = [], i, cid, k;
+  var clusters = [];
+  for (cid in CLUSTERS) clusters.push(CLUSTERS[cid]);
+  if (!clusters.length){ showToast('这张图上还没有东西可导出'); return; }
+  clusters.sort(function(a, b){ return String(a.name || '').localeCompare(String(b.name || '')); });
+
+  var dirUsed = {};
+  for (i = 0; i < clusters.length; i++){
+    var cl = clusters[i];
+    var dn = safeName(cl.name || '未命名星团');
+    if (dirUsed[dn]){ dirUsed[dn]++; dn = dn + ' ' + dirUsed[dn]; } else dirUsed[dn] = 1;
+    cl._dir = dn;
+    cl._nodes = [];
+    for (k = 0; k < cl.nodeIds.length; k++){
+      var nd = NODES[cl.nodeIds[k]];
+      if (nd) cl._nodes.push(nd);
+    }
+  }
+
+  files.push({ name: '星图导出/README.md', data: readmeMd(clusters, now) });
+
+  for (i = 0; i < clusters.length; i++){
+    var c2 = clusters[i];
+    var fileUsed = {};
+    for (var j = 0; j < c2._nodes.length; j++){
+      var nn = c2._nodes[j];
+      var fn = safeName(nn.label);
+      if (fileUsed[fn]){ fileUsed[fn]++; fn = fn + ' ' + fileUsed[fn]; } else fileUsed[fn] = 1;
+      files.push({ name: '星图导出/' + c2._dir + '/' + fn + '.md', data: nodeMd(nn) });
+    }
+    files.push({ name: '星图导出/' + c2._dir + '/索引.md', data: indexMd(c2, c2._nodes) });
+  }
+  files.push({ name: '星图导出/星图.json', data: JSON.stringify(buildPayload(), null, 1) });
+
+  try {
+    downloadBlob(zipBuild(files), '星图导出-' + fileStamp(now) + '.zip');
+    showToast('导出了 ' + files.length + ' 个文件 · 用 Obsidian 打开这个文件夹就能看');
+  } catch (e) {
+    showToast('导出失败：' + (e && e.message ? e.message : e));
+  }
+}
+
+/* ============ 最近弄懂的 ============
+   generations 表本来只用来记 token，现在把它变成用户能看见的东西：
+   这张星图不是一次想出来的，是这些次点开累积出来的。 */
+function agoText(sec){
+  var v = Number(sec) || 0;
+  if (v > 1e12) v = v / 1000;        /* generations.created_at 存的是毫秒 */
+  var t = Date.now() / 1000 - v;
+  if (!v || t < 0) return '';
+  if (t < 90) return '刚刚';
+  if (t < 3600) return Math.round(t / 60) + ' 分钟前';
+  if (t < 86400) return Math.round(t / 3600) + ' 小时前';
+  if (t < 86400 * 30) return Math.round(t / 86400) + ' 天前';
+  return Math.round(t / 86400 / 30) + ' 个月前';
+}
+function localRecent(){
+  try { return JSON.parse(localStorage.getItem('starmap.recent') || '[]'); } catch (e) { return []; }
+}
+function pushLocalRecent(n, ok){
+  if (!n) return;
+  var arr = localRecent();
+  for (var i = arr.length - 1; i >= 0; i--){ if (arr[i].nodeId === n.id) arr.splice(i, 1); }
+  arr.unshift({ nodeId: n.id, label: n.label, at: Math.round(Date.now() / 1000), ok: ok ? 1 : 0 });
+  if (arr.length > 60) arr.length = 60;
+  try { localStorage.setItem('starmap.recent', JSON.stringify(arr)); } catch (e) {}
+}
+function recentRows(items){
+  var html = '';
+  for (var i = 0; i < items.length; i++){
+    var it = items[i];
+    var dead = !it.nodeId || !NODES[it.nodeId];
+    var cl = dead ? null : CLUSTERS[NODES[it.nodeId].cluster];
+    html += '<button class="recentrow' + (dead ? ' dead' : '') + '"' + (dead ? ' disabled' : ' data-rnode="' + it.nodeId + '"') + '>';
+    html += '<span class="rd" style="' + (cl ? 'background:hsl(' + cl.hue + ',70%,66%)' : 'background:#4a5468') + '"></span>';
+    html += '<span class="rn">' + escHtml(it.label || it.concept || '（没有名字）') + '</span>';
+    if (it.ok === 0 || it.ok === false) html += '<span class="rk bad">没过自检</span>';
+    html += '<span class="rm">' + (cl ? escHtml(shortLabel(cl.name, 10)) + ' · ' : '') + agoText(it.at) + '</span>';
+    html += '</button>';
+  }
+  return html;
+}
+function openRecent(){
+  var m = document.getElementById('recentModal');
+  var box = document.getElementById('recentList');
+  if (!m || !box) return;
+  m.classList.add('on');
+  box.innerHTML = '<p class="recentempty">正在取…</p>';
+  var painted = false;
+  function paint(items, note){
+    if (painted) return;
+    painted = true;
+    items = items || [];
+    var alive = [];
+    for (var i = 0; i < items.length; i++){ if (items[i].nodeId && NODES[items[i].nodeId]) alive.push(items[i]); }
+    items = alive;
+    if (!items.length){
+      box.innerHTML = '<p class="recentempty">还没有记录。' +
+        (DIRECT ? '直连模式下只记录这台浏览器里的，点开一个节点试试。' : '点开任何一个节点，这里就会记下一条。') + '</p>';
+      return;
+    }
+    box.innerHTML = recentRows(items);
+    var sub = document.getElementById('recentSub');
+    if (sub) sub.textContent = note + '这张星图不是一次想出来的 —— 它是这些次点开累积出来的。';
+    box.querySelectorAll('[data-rnode]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var id = this.dataset.rnode;
+        m.classList.remove('on');
+        openNode(id);
+        focusNode(id, Math.max(V.k, 0.95));
+        pulse(id);
+      });
+    });
+  }
+  if (DIRECT){ var lr0 = localRecent(); paint(lr0, '这台浏览器里记着 ' + lr0.length + ' 条。'); return; }
+  var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  var guard = setTimeout(function(){
+    if (painted) return;
+    if (ctl) ctl.abort();
+    var lr1 = localRecent();
+    paint(lr1, lr1.length ? '服务器 8 秒没回话，这是浏览器里的记录。' : '服务器 8 秒没回话。');
+    var sub = document.getElementById('recentSub');
+    if (sub) sub.textContent = '服务器没回话（/api/recent）。先看看是不是服务端没起来，或者页面还开着旧版本。';
+  }, 8000);
+  fetch('/api/recent?limit=40', ctl ? { signal: ctl.signal } : {})
+    .then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(j){
+      clearTimeout(guard);
+      if (!j || !j.db) throw new Error('没有连上数据库');
+      paint(j.items || [], '本机记录了最近 ' + (j.items || []).length + ' 条。');
+    })
+    .catch(function(e){
+      clearTimeout(guard);
+      if (painted) return;
+      var lr = localRecent();
+      paint(lr, lr.length ? ('服务端没连上（' + (e && e.message || '未知错误') + '），这是浏览器里的记录。') : '');
+      if (!lr.length){
+        box.innerHTML = '<p class="recentempty">取不到记录：' + escHtml(String((e && e.message) || '未知错误')) +
+          '。' + (DIRECT ? '直连模式下只记录这台浏览器里的。' : '检查一下 server.js 是不是还在跑。') + '</p>';
+        painted = true;
+      }
+    });
 }
 
 /* ============ 用户追问 ============ */
@@ -1977,6 +2557,8 @@ function restoreState(st){
     var e = st.edges[k];
     var ed = { a:e.a, b:e.b, cluster:(e.cluster_id != null ? e.cluster_id : e.clusterId) };
     if (e.cross) ed.cross = true;
+    if (e.rel) ed.rel = e.rel;      /* 手动航线上的那句「它俩是什么关系」 */
+    if (e.rt) ed.rt = e.rt;         /* 它的短名，画在连线上 */
     if (e.manual){ ed.manual = true; if (NODES[e.a]) NODES[e.a].manualIds.push(e.b); if (NODES[e.b]) NODES[e.b].manualIds.push(e.a); }
     else if (e.cross){ if (NODES[e.a]) NODES[e.a].crossIds.push(e.b); if (NODES[e.b]) NODES[e.b].crossIds.push(e.a); }
     EDGES.push(ed);
@@ -2015,7 +2597,8 @@ function buildPayload(){
   }
   for (var i=0;i<EDGES.length;i++){
     var e = EDGES[i];
-    payload.edges.push({ a:e.a, b:e.b, clusterId:e.cluster, cross:e.cross ? 1 : 0, manual:e.manual ? 1 : 0 });
+    payload.edges.push({ a:e.a, b:e.b, clusterId:e.cluster, cross:e.cross ? 1 : 0, manual:e.manual ? 1 : 0,
+                         rel:e.rel || null, rt:e.rt || null });
   }
   return payload;
 }
@@ -2227,6 +2810,7 @@ function finishLive(n, state, cl){
     }
     scheduleSave();
   }
+  pushLocalRecent(n, state.check.indexOf('fail') !== 0);
   if (state.check.indexOf('fail') === 0){
     if (window.console) console.warn('[生成自检] ' + n.label + ' -> ' + state.check);
     var det = document.createElement('details');
@@ -2286,6 +2870,7 @@ function renderLive(n, cl, bust){
   var isBridge = n.kind === 'bridge', bKids = [];
   if (isBridge){ for (var bi=0;bi<n.children.length;bi++){ var bk = NODES[n.children[bi]]; if (bk) bKids.push(bk.label); } }
   var reqBody = {
+    nodeId: n.id,          /* 「最近弄懂的」靠它反查节点；以前没发，服务端永远记成空 */
     concept: (isBridge && bKids[0]) ? bKids[0] : n.label,
     topic:   (isBridge && bKids[1]) ? bKids[1] : cl.name,
     parent: n.parentId ? NODES[n.parentId].label : '',
@@ -2767,12 +3352,7 @@ window.addEventListener('load', function(){
   /* ============ 顶栏搜索：图里有就定位过去，没有就当场当成提问 ============ */
   var sIn = document.getElementById('searchInput');
   var sRes = document.getElementById('sres');
-  var sActs = [], sIdx = -1;
-  function escHtml(s){
-    return String(s).replace(/[&<>"]/g, function(c){
-      return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
-    });
-  }
+  var sActs = [], sIdx = -1;   /* escHtml 用外层全局那份 */
   function searchMatches(q){
     q = (q || '').trim().toLowerCase();
     var out = [];
@@ -2949,6 +3529,12 @@ window.addEventListener('load', function(){
   document.getElementById('aboutClose').addEventListener('click', aboutCloseFn);
   aboutModal.addEventListener('click', function(e){ if (e.target === aboutModal) aboutCloseFn(); });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && aboutModal.classList.contains('on')) aboutCloseFn(); });
+  /* 导出 / 最近弄懂的 */
+  var recentModal = document.getElementById('recentModal');
+  document.getElementById('exportBtn').addEventListener('click', exportMarkdown);
+  document.getElementById('recentClose').addEventListener('click', function(){ recentModal.classList.remove('on'); });
+  recentModal.addEventListener('click', function(e){ if (e.target === recentModal) recentModal.classList.remove('on'); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && recentModal.classList.contains('on')) recentModal.classList.remove('on'); });
   document.querySelectorAll('[data-prov]').forEach(function(b){
     b.addEventListener('click', function(){
       var p = PRESETS[this.dataset.prov];

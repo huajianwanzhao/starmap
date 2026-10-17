@@ -38,10 +38,14 @@ function openDb() {
     d.exec([
       'CREATE TABLE IF NOT EXISTS clusters (id TEXT PRIMARY KEY, name TEXT, cx REAL, cy REAL, hue INTEGER, aliases TEXT, created_at INTEGER)',
       'CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, cluster_id TEXT, parent_id TEXT, kind TEXT, label TEXT, rel TEXT, why TEXT, question TEXT, x REAL, y REAL, visited INTEGER, created_at INTEGER)',
-      'CREATE TABLE IF NOT EXISTS edges (a TEXT, b TEXT, cluster_id TEXT, cross INTEGER, manual INTEGER, PRIMARY KEY (a, b))',
+      'CREATE TABLE IF NOT EXISTS edges (a TEXT, b TEXT, cluster_id TEXT, cross INTEGER, manual INTEGER, rel TEXT, rt TEXT, PRIMARY KEY (a, b))',
       'CREATE TABLE IF NOT EXISTS lectures (cache_key TEXT PRIMARY KEY, body TEXT, problems TEXT, created_at INTEGER)',
       'CREATE TABLE IF NOT EXISTS generations (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, concept TEXT, topic TEXT, model TEXT, prompt_tokens INTEGER, completion_tokens INTEGER, cached_tokens INTEGER, ok INTEGER, problems TEXT, created_at INTEGER)'
     ].join(';'));
+    /* 老库补列：edges.rel（双链上那句「它俩是什么关系」）。CREATE TABLE IF NOT EXISTS 不会改已有表，
+       所以必须单独 ALTER 一次；已经有了就报错，吞掉即可。 */
+    try { d.exec('ALTER TABLE edges ADD COLUMN rel TEXT'); } catch (e) { /* 列已存在 */ }
+    try { d.exec('ALTER TABLE edges ADD COLUMN rt TEXT'); } catch (e) { /* 列已存在 */ }
     console.log('[db] 已连接');
     return d;
   } catch (e) {
@@ -66,8 +70,8 @@ function saveState(s) {
     for (const c of (s.clusters || [])) ci.run(String(c.id), String(c.name || ''), Number(c.cx) || 0, Number(c.cy) || 0, Number(c.hue) || 0, JSON.stringify(c.aliases || []), Date.now());
     const ni = DB.prepare('INSERT INTO nodes (id,cluster_id,parent_id,kind,label,rel,why,question,x,y,visited,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
     for (const n of (s.nodes || [])) ni.run(String(n.id), String(n.clusterId || n.cluster_id || ''), (n.parentId || n.parent_id) ? String(n.parentId || n.parent_id) : null, String(n.kind || 'concept'), String(n.label || ''), n.rel == null ? null : String(n.rel), n.why == null ? null : String(n.why), n.question == null ? null : String(n.question), Number(n.x) || 0, Number(n.y) || 0, n.visited ? 1 : 0, Date.now());
-    const ei = DB.prepare('INSERT OR REPLACE INTO edges (a,b,cluster_id,cross,manual) VALUES (?,?,?,?,?)');
-    for (const e of (s.edges || [])) ei.run(String(e.a), String(e.b), String(e.clusterId || e.cluster_id || ''), e.cross ? 1 : 0, e.manual ? 1 : 0);
+    const ei = DB.prepare('INSERT OR REPLACE INTO edges (a,b,cluster_id,cross,manual,rel,rt) VALUES (?,?,?,?,?,?,?)');
+    for (const e of (s.edges || [])) ei.run(String(e.a), String(e.b), String(e.clusterId || e.cluster_id || ''), e.cross ? 1 : 0, e.manual ? 1 : 0, e.rel == null ? null : String(e.rel), e.rt == null ? null : String(e.rt));
     DB.exec('COMMIT');
     return true;
   } catch (e) {
@@ -195,12 +199,14 @@ function parseTag(line) {
   return { tag: line.slice(2, i), rest: line.slice(i + 1).trim() };
 }
 function parseLineProtocol(text) {
-  const out = { common: '', insight: '', fact: '', scene: [], mech: [], formula: null, bounds: [], mis: [], list: [], children: [], raw: text };
+  const out = { common: '', insight: '', fact: '', scene: [], mech: [], formula: null, bounds: [], mis: [], list: [], children: [], title: '', rel: '', raw: text };
   for (const raw of text.split('\n')) {
     const p = parseTag(raw.split('\r').join(''));
     if (!p) continue;
     if (p.tag === 'COMMON') out.common = p.rest;
     else if (p.tag === 'INSIGHT') out.insight = p.rest;
+    else if (p.tag === 'TITLE') out.title = p.rest;   /* 只有「关系/双链」这两条分支会输出它 */
+    else if (p.tag === 'REL') out.rel = p.rest;
     else if (p.tag === 'FACT') out.fact = p.rest;
     else if (p.tag === 'SCENE') out.scene.push(p.rest);
     else if (p.tag === 'MECH') out.mech.push(p.rest);
@@ -435,7 +441,13 @@ function serveStatic(pathname, res) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('404');
   }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+  const ext = path.extname(file);
+  res.writeHead(200, {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    /* 页面永远向服务器要新的：否则改完前端刷新还是旧脚本，功能会「莫名失灵」 */
+    'Cache-Control': ext === '.html' ? 'no-store, must-revalidate' : 'no-cache',
+    'Last-Modified': fs.statSync(file).mtime.toUTCString()
+  });
   res.end(fs.readFileSync(file));
 }
 
@@ -581,6 +593,78 @@ async function handleLecture(req, res, isAnswer) {
   res.end();
 }
 
+/* ---------- 双链：让 AI 指出两个节点之间是什么关系 ----------
+   只回两行，成本极低（几十个 token）。不复用 handleLecture 的 R| 分支，
+   因为那条分支产出的是一整份讲义，而这里用户只想知道「它俩算什么关系」——
+   一句话，能当连线上的标签用。 */
+const LINK_RULES = [
+  '你在帮用户把一个知识星图上的两个节点连起来。用户认为它们有关系，你要用一句话说清是什么关系，并给它一个短名字。',
+  '',
+  '【输出格式：只有两行，不要任何其他文字，不要 markdown，不要代码块】',
+  '##TITLE <不超过 12 个字，能当这条连线标签用的短名，例如「同一个硬币的两面」>',
+  '##REL <一句话，不超过 40 字，说清 A 和 B 是什么关系>',
+  '',
+  '【硬性规则】',
+  '1. 关系必须是具体的：谁是谁的前提、谁是谁的特例、同一件事的两个层面、一个用来解释另一个……',
+  '2. 不许写「它们有关联」「互相影响」这类放在任何两个东西上都成立的空话。',
+  '3. 如果这两者其实没有真正的关系，就在 ##REL 里直说「严格说这两者没有直接关系」，不要硬编。',
+  '4. 不要分别复述 A 是什么、B 是什么 —— 只讲它们之间。'
+].join('\n');
+
+async function handleLink(req, res) {
+  const body = await readBody(req);
+  const a = String(body.a || '').slice(0, 80);
+  const b = String(body.b || '').slice(0, 80);
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' });
+  if (!a || !b) { res.write('##CHECK fail 缺少节点名\n'); return res.end(); }
+  const key = 'X|' + a + '|' + b;
+  if (!body.bust) {
+    let hit = cache.get(key);
+    if (!hit) { const fromDb = recallLecture(key); if (fromDb) { hit = fromDb; cache.set(key, fromDb); } }
+    if (hit) {
+      res.write(hit.text);
+      res.write('\n##CHECK ' + (hit.check.length ? 'fail ' + hit.check.join('；') : 'ok') + '\n');
+      return res.end();
+    }
+  }
+  if (!CFG.apiKey) {
+    res.write('##REL 服务端还没有配置 API Key，暂时没法让模型说它们的关系。\n');
+    res.write('##CHECK fail 未配置 apiKey\n');
+    return res.end();
+  }
+  const user = '节点 A：' + a + '\n节点 B：' + b + '\n\n这两者之间是什么关系？';
+  let full = '';
+  const sink = {};
+  try {
+    full = await llmStream([{ role: 'system', content: LINK_RULES }, { role: 'user', content: user }],
+      function (d) { res.write(d); }, sink);
+  } catch (e) {
+    res.write('\n##REL 生成失败：' + e.message + '\n##CHECK fail ' + e.message + '\n');
+    return res.end();
+  }
+  const p = parseLineProtocol(full);
+  const title = p.title || '';
+  const rel = p.rel || (p.insight || '');
+  if (!rel) {
+    res.write('\n##CHECK fail 模型没有给出 ##REL\n');
+    return res.end();
+  }
+  const problems = [];
+  if (title.length > 14) problems.push('关系短名超过 12 字');
+  if (rel.length > 60) problems.push('关系说明超过 40 字');
+  cache.set(key, { text: full, check: problems });
+  rememberLecture(key, full, problems);
+  const u = sink.usage || {};
+  recordGeneration({
+    nodeId: String(body.nodeId || ''), concept: a + ' ⇄ ' + b, topic: String(body.topic || '').slice(0, 100), model: CFG.model,
+    promptTokens: u.prompt_tokens || 0, completionTokens: u.completion_tokens || 0,
+    cachedTokens: u.prompt_cache_hit_tokens || (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens) || 0,
+    ok: problems.length ? 0 : 1, problems: problems.join('；')
+  });
+  res.write('\n##CHECK ' + (problems.length ? 'fail ' + problems.join('；') : 'ok') + '\n');
+  res.end();
+}
+
 const server = http.createServer(async function (req, res) {
   const u = new URL(req.url, 'http://localhost');
   try {
@@ -616,6 +700,31 @@ const server = http.createServer(async function (req, res) {
       } catch (e) {
         return json(res, { ok: false, error: String(e && e.message || e).slice(0, 300) });
       }
+    }
+    if (u.pathname === '/api/link' && req.method === 'POST') return await handleLink(req, res);
+    /* 「最近弄懂的」：把一直只用来记 token 的 generations 表变成用户能看见的东西。
+       按 node_id 反查节点（节点可能已经被删掉），查不到就退回用 concept 名兜底。 */
+    if (u.pathname === '/api/recent' && req.method === 'GET') {
+      if (!DB) return json(res, { db: false, items: [] });
+      const limit = Math.max(1, Math.min(60, Number(u.searchParams.get('limit') || 30)));
+      let rows = [];
+      try {
+        rows = DB.prepare('SELECT id, node_id, concept, topic, model, ok, created_at FROM generations ORDER BY id DESC LIMIT ?').all(limit);
+      } catch (e) { return json(res, { db: true, items: [] }); }
+      const byId = DB.prepare('SELECT id, label, cluster_id FROM nodes WHERE id = ?');
+      const byName = DB.prepare('SELECT id, label, cluster_id FROM nodes WHERE label = ? LIMIT 1');
+      const items = [];
+      for (const r of rows) {
+        let n = null;
+        try { n = r.node_id ? byId.get(String(r.node_id)) : null; } catch (e) {}
+        if (!n) { try { n = byName.get(String(r.concept)); } catch (e) {} }
+        items.push({
+          id: r.id, concept: String(r.concept || ''), topic: String(r.topic || ''), model: String(r.model || ''),
+          ok: r.ok ? 1 : 0, at: r.created_at || 0,
+          nodeId: n ? n.id : '', label: n ? n.label : String(r.concept || ''), clusterId: n ? n.cluster_id : ''
+        });
+      }
+      return json(res, { db: true, items: items });
     }
     if (u.pathname === '/api/seed') return await handleSeed(u, res);
     if (u.pathname === '/api/lecture' && req.method === 'POST') return await handleLecture(req, res, false);

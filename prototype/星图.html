@@ -1929,7 +1929,7 @@ function nodeMd(n){
     if (L.fact){ o.push('## 答案是'); o.push(''); o.push('**' + L.fact + '**'); o.push(''); }
     var LU = L.ui || {};
     if (L.moldName && L.moldName !== '默认'){ o.push('*这一份用：' + L.moldName + '*'); o.push(''); }
-    if (L.common){ o.push('## ' + uiTitle(LU, 'common', '大多数人以为')); o.push(''); o.push(L.common); o.push(''); }
+    if (L.common){ o.push('## ' + uiTitle(LU, 'common', '有些人以为')); o.push(''); o.push(L.common); o.push(''); }
     if (L.insight){ o.push('## ' + uiTitle(LU, 'insight', '其实')); o.push(''); o.push(L.insight); o.push(''); }
     if (L.scene){ o.push('## ' + uiTitle(LU, 'scene', '一个画面')); o.push(''); o.push(L.scene); o.push(''); }
     if (L.list && L.list.length){
@@ -3041,13 +3041,13 @@ function renderLive(n, cl, bust){
 
 /* ============ 直连模式：浏览器直接调模型 ============ */
 var RULES = [
-  '你是一个教科书级的解释者，但不预设学科：数学、物理、人文、艺术、工程一样对待。用户在探索一张知识星图，刚点开一个概念，你要写一份极短的讲义。',
+  '你是一个教科书级的解释者。用户在探索一张知识星图，刚点开一个概念，你要写一份极短的讲义。',
   '',
   '【输出格式：行协议，必须严格遵守】',
   '每行以 ## 开头，标签 + 空格 + 内容。不要输出任何其他文字，不要用 markdown 代码块，不要用列表符号。',
   '',
-  '##COMMON 大多数人以为：<一句流行的错误理解>',
-  '##INSIGHT 其实<一句反直觉的真相>',
+  '##COMMON 有些人以为：<一句流行的错误理解>',
+  '##INSIGHT 其实<一句真相>',
   '##LIST <条目> | <一句为什么它值得一提>   ← 只在清单型问题下使用，最多 10 行；其它情况不要输出这一行',
   '##SCENE <一个具体画面：不出现任何专业名词，不超过两句，必须含一个具体数字或量词，以及一个身体动作或感官>',
   '##MECH <它是怎么工作的，一段；可以有多行 ##MECH>',
@@ -3059,15 +3059,14 @@ var RULES = [
   '##CHILD <子概念名> | <它回答的下一个问题> | <关系词> | <一句话为什么值得点进去>',
   '',
   '【硬性规则】',
-  '1. 洞察必须反直觉：##INSIGHT 里必须出现「其实/并不是/并非/反而/恰恰/只有」其中之一。禁止写成定义句；也不许在 ##INSIGHT 里出现这个概念的名字本身（用「它」代替），否则就是在下定义。',
-  '2. 画面必须自足：##SCENE 里不许出现任何专业名词，不许出现其他概念的名字。',
+  '1. 洞察必须深刻化：##INSIGHT 里必须出现「其实/从更高层视角看/是......的特例/」其中之一。禁止写成定义句。',
+  '2. 画面必须自足，若没有合适的画面，就省略画面：##SCENE 里不许出现任何专业名词，不许出现其他概念的名字。',
   '3. 公式若写，必须同时给出 ##READ 和至少两个 ##SYM；若这个概念没有合适的公式，就整体省略这三行。',
   '4. 必须写 ##BOUNDS。',
   '5. ##CHILD 最多 4 行，第二个字段必须是「下一个困惑」，不是「相关概念」。每个子概念都必须能从「本次要讲的概念」本身自然引出；如果这个概念你了解得太少、想不出真正相关的子概念，就少写几个（允许只写 1 个甚至完全不写），绝对不许拿别的领域的术语来凑数。',
   '6. 禁止用别的概念来定义当前概念。顺序永远是：画面 → 现象 → 最后才给它名字。',
   '7. 正文总长不超过 400 字（公式与符号表不算）。宁可短。',
-  '8. 清单型问题（问「有哪些 / 哪几个 / 分几类 / 都包括 / 包含哪些」）必须先用 ##LIST 逐条列出来，一条一行，最多 10 行，每条都跟一句"为什么它值得一提"；此时禁止纠错式开场，#COMMON 不要写成"你以为……其实不是"，改成「这题常常被当成一个背诵清单，但清单是怎么被选出来的，本身就是答案」。',
-  '9. 一个词可能在好几个学科里有完全不同的含义（正则化、熵、梯度、收敛…）。必须先看「当前正在探索的问题」的语境：语境落在数学/物理/人文，就绝不要默认取机器学习或计算机里的那一支。若另一种含义极其常见，可以在 ##MIS 里补一句「另一个学科里它指的不是这个」，但正文主体必须落在当前语境这一支上。',
+  '8. 清单型问题（问「有哪些 / 哪几个 / 分几类 / 都包括 / 包含哪些」）必须先用 ##LIST 逐条列出来，一条一行，最多 10 行，每条都跟一句"为什么它值得一提"；此时禁止纠错式开场，#COMMON 不要写成"你以为……其实不是"，改成「清单如下：」。',
   '',
   '关系词只能从这些里选：前置 / 参数 / 上游 / 陷阱 / 变体 / 技巧 / 应用 / 对比 / 延伸'
 ].join('\n');
@@ -3120,7 +3119,7 @@ var ENUM_Q = /有哪些|哪几个|哪几种|分几类|分为几类|都包括|包
 function isEnumQuestion(s){ return !!s && ENUM_Q.test(s); }
 
 var CHK_DIGITS = '0123456789０１２３４５６７８９一二三四五六七八九十百千万两';
-var CHK_TURNS = ['其实', '并不是', '并非', '反而', '恰恰', '只有'];
+var CHK_TURNS = ['其实', '并不是', '并非', '反而', '恰恰', '只有', '更高层', '特例'];
 function chkDigit(s){ for (var i=0;i<s.length;i++) if (CHK_DIGITS.indexOf(s.charAt(i)) >= 0) return true; return false; }
 function chkTurn(s){ for (var i=0;i<CHK_TURNS.length;i++) if (s.indexOf(CHK_TURNS[i]) >= 0) return true; return false; }
 function selfCheckClient(state, concept, isRel, isFact){
@@ -3128,8 +3127,8 @@ function selfCheckClient(state, concept, isRel, isFact){
   for (i=0;i<state.children.length;i++) childNames.push(state.children[i][0]);
   var insight = d.insight || '', sceneAll = (d.scene || []).join(' ');
   /* 关系讲义天然要同时点名 A 和 B，所以「出现本节点名/子概念名」这几条对它不适用 */
+  /* 「洞察里出现本节点名」按用户改的规则 1 关掉：新规则只说禁止定义句，不再禁止点名 */
   if (!isRel && !isFact){
-    if (insight && insight.indexOf(concept) >= 0) problems.push('洞察里出现了本节点名（在下定义）');
     for (i=0;i<childNames.length;i++){
       var nm = childNames[i];
       if (nm && nm.length >= 2 && insight.indexOf(nm) >= 0) problems.push('洞察里出现了子概念「' + nm + '」（耦合）');

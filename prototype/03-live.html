@@ -362,6 +362,17 @@
   .recentrow .rk{font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid rgba(138,164,255,.35);color:#9fb0d0;white-space:nowrap}
   .recentrow .rk.bad{border-color:rgba(224,150,150,.45);color:#e0a0a0}
   .recentempty{font-size:12.5px;color:#8f9bb5;line-height:1.9;margin:8px 0 0}
+
+  /* ===== 模具：讲义长什么样，是用户可以改的文本 ===== */
+  .tpllist{margin:8px 0 0;max-height:46vh;overflow:auto;padding-right:4px}
+  .tplrow{display:block;width:100%;text-align:left;background:rgba(138,255,196,.04);border:1px solid rgba(138,255,196,.16);border-radius:10px;padding:10px 13px;margin:0 0 8px;color:#cfd8ea;font-family:inherit;cursor:pointer}
+  .tplrow:hover{background:rgba(138,255,196,.1);border-color:rgba(138,255,196,.34)}
+  .tplrow.on{border-color:rgba(138,255,196,.55);background:rgba(138,255,196,.11)}
+  .tplrow .tpln{font-size:13.5px;color:#e7f2fe;margin:0 0 3px;line-height:1.6}
+  .tplrow .tpld{font-size:12px;color:#8f9bb5;line-height:1.8;margin:0}
+  .tplrow .tplm{font-size:11px;color:#6f7c94;margin:6px 0 0;font-family:ui-monospace,Consolas,monospace}
+  .tplrow .tplcur{font-size:10.5px;padding:1px 7px;border-radius:999px;border:1px solid rgba(138,255,196,.5);color:#a8f0c8;margin-left:7px;vertical-align:1px}
+  .tpldir{font:11.5px/1.7 ui-monospace,Consolas,monospace;color:#7f8aa3;word-break:break-all;margin:10px 0 0}
   #diag{position:fixed;right:10px;bottom:10px;z-index:9999;font:12px/1.7 ui-monospace,Consolas,monospace;color:#a9bfe2;background:rgba(6,9,18,.9);border:1px solid #26314a;border-radius:10px;padding:8px 11px;max-width:52ch;white-space:pre-wrap;cursor:pointer;pointer-events:auto}
   #diag:empty{display:none}
 </style>
@@ -490,6 +501,7 @@
         <p>这一版没有服务端：页面直接在浏览器里调用模型接口（默认 DeepSeek），你填的 API Key 只写进<b>你这个浏览器的 localStorage</b>，不会上传到任何地方——除了它本来就要发给模型服务商的那次请求。</p>
         <p>你长出来的星图、看过的讲义，同样只存在这个浏览器里。<b>换台电脑、换个浏览器、或者清一次浏览器数据，就会回到初始状态。</b>想让成果落成一个可以备份的文件，请用仓库里的服务端模式（<code>start-server.bat</code>），数据会写进本机的 <code>star.db</code>；也可以点顶栏的「导出」，把整张星图下载成 .md 文件夹。</p>
         <p>在线版的定位是「先试试看」；它和完整版共用同一份前端代码，功能一致。</p>
+        <p>唯一换不了的是一样东西：<b>模具</b>。讲义「长什么样」定义在服务端的 <code>templates/*.rules</code> 里，这个版本读不到那些文件，只能用内置的那一副默认模具。</p>
       </div>
 
       <div class="absec">
@@ -540,6 +552,19 @@
       <div class="recentlist" id="recentList"></div>
       <div class="cfgacts">
         <button class="primary" id="recentClose">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cfgmodal" id="tplModal">
+    <div class="cfgcard">
+      <div class="cfgh">模具</div>
+      <div class="cfgsub" id="tplSub">讲义长什么样，由这一份纯文本决定 —— 不是设置项，是一个你能打开、能改的文件。</div>
+      <div class="tpllist" id="tplList"></div>
+      <div class="tpldir" id="tplDir"></div>
+      <div class="cfgacts">
+        <button class="primary" id="tplOpenDir">打开模板文件夹</button>
+        <button id="tplClose">关闭</button>
       </div>
     </div>
   </div>
@@ -632,13 +657,15 @@ var NODES = {};       /* id -> node  （kind: question | concept） */
 var LECTURES = {};    /* nodeId -> 该节点专属的讲义（追问的回答就走这里） */
 var LIVE = false;     /* 本地服务模式：Key 由服务端的 config.json 保管 */
 var DIRECT = false;   /* 直连模式：双击打开时启用，Key 存在本机浏览器里 */
+var MOLD = '';        /* 当前模具 id：空 = 服务端 config.json 里存的那副（直连模式恒为空，用内置的） */
+var MOLD_NAME = '默认';
 var modeReady;
 try {
   modeReady = fetch('/api/health').then(function(r){ return r.json(); })
     .then(function(j){ if (j && j.live) LIVE = true; else DIRECT = true; })
     .catch(function(){ DIRECT = true; });
 } catch (e) { DIRECT = true; modeReady = Promise.resolve(); }
-var BUILD = '2026-10-17c';
+var BUILD = '2026-10-17d';
 try { console.log('%c 星图 build ' + BUILD, 'color:#8ab4f8;font-weight:bold'); } catch (e) {}
 function whenMode(fn){
   var done = false, once = function(){ if (!done){ done = true; fn(); } };
@@ -1788,6 +1815,7 @@ function buildMenu(){
   }
   out += '<div class="sep"></div>';
   out += '<button class="item" data-act="recent"><span>最近弄懂的</span><span class="meta">你点开过的</span></button>';
+  out += '<button class="item" data-act="tpl"><span>模具</span><span class="meta">讲义长什么样</span></button>';
   out += '<button class="item" data-act="fit"><span>回到全景</span><span class="meta">看整个宇宙</span></button>';
   var menu = document.getElementById('menu');
   menu.innerHTML = out;
@@ -1803,6 +1831,8 @@ function buildMenu(){
   });
   var rmi = menu.querySelector('[data-act="recent"]');
   if (rmi) rmi.addEventListener('click', function(){ menu.classList.remove('open'); openRecent(); });
+  var tmi = menu.querySelector('[data-act="tpl"]');
+  if (tmi) tmi.addEventListener('click', function(){ menu.classList.remove('open'); openTpl(); });
 }
 
 
@@ -2172,6 +2202,71 @@ function openRecent(){
         painted = true;
       }
     });
+}
+
+/* ============ 模具：讲义长什么样，是一个文件 ============
+   协议（几个 ## 标签、怎么解析）写死在 server.js 里，用户碰不到；
+   用户能换的只是「怎么说」—— 一份 .rules 纯文本，追加在协议后面。
+   所以随便改坏一个模具，最坏结果是讲义难看，解析和自检照旧。 */
+function openTpl(){
+  var m = document.getElementById('tplModal');
+  var box = document.getElementById('tplList');
+  var dirEl = document.getElementById('tplDir');
+  var openBtn = document.getElementById('tplOpenDir');
+  if (!m || !box) return;
+  m.classList.add('on');
+  if (DIRECT){
+    box.innerHTML = '<p class="recentempty">直连模式（双击打开的这个文件）用的是页面内置的那一副模具，换不了。<br>想挑模具、改模具文件，请用 <b>start-server.bat</b> 起服务、打开 <code>127.0.0.1:5173</code>。</p>';
+    dirEl.textContent = '';
+    openBtn.style.display = 'none';
+    return;
+  }
+  openBtn.style.display = '';
+  box.innerHTML = '<p class="recentempty">正在读模板…</p>';
+  fetch('/api/templates').then(function(r){
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(j){
+    var items = j.items || [];
+    dirEl.textContent = '模板文件：' + (j.dir || '') + '　（*.rules，纯文本，改完刷新页面就生效）';
+    if (!items.length){
+      box.innerHTML = '<p class="recentempty">模板目录是空的 —— 在 templates 里放一个 .rules 文件，这里就多一副模具。</p>';
+      return;
+    }
+    var html = '';
+    for (var i=0;i<items.length;i++){
+      var t = items[i], on = (t.id === j.current);
+      html += '<button class="tplrow' + (on ? ' on' : '') + '" data-tpl="' + escHtml(t.id) + '">';
+      html += '<p class="tpln">' + escHtml(t.name) + (on ? '<span class="tplcur">正在用</span>' : '') + '</p>';
+      if (t.desc) html += '<p class="tpld">' + escHtml(t.desc) + '</p>';
+      html += '<p class="tplm">' + (t.chars || 0) + ' 字' + (t.empty ? ' · 空文件，等于不加要求' : '') + '</p>';
+      html += '</button>';
+    }
+    box.innerHTML = html;
+    box.querySelectorAll('[data-tpl]').forEach(function(b){
+      b.addEventListener('click', function(){ pickTpl(this.dataset.tpl); });
+    });
+    if (!j.current) return;
+  }).catch(function(e){
+    box.innerHTML = '<p class="recentempty">读不到模板：' + escHtml(String((e && e.message) || e)) +
+      '。检查一下 server.js 还在不在跑。</p>';
+  });
+}
+function pickTpl(id){
+  fetch('/api/templates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: id }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if (!j.ok){ showToast(j.error || '换不了这个模具'); return; }
+      MOLD = j.template || '';
+      MOLD_NAME = j.templateName || '默认';
+      LECTURES = {};                     /* 换模具 = 换一种讲法，前端存的旧讲义不能再用 */
+      showToast('模具换成「' + MOLD_NAME + '」· 重新点开节点就是新讲法');
+      openTpl();
+      if (typeof currentId !== 'undefined' && currentId){
+        setTimeout(function(){ openNode(currentId, false); }, 400);
+      }
+    })
+    .catch(function(e){ showToast('换模具失败：' + ((e && e.message) || e)); });
 }
 
 /* ============ 用户追问 ============ */
@@ -2870,6 +2965,7 @@ function renderLive(n, cl, bust){
   var isBridge = n.kind === 'bridge', bKids = [];
   if (isBridge){ for (var bi=0;bi<n.children.length;bi++){ var bk = NODES[n.children[bi]]; if (bk) bKids.push(bk.label); } }
   var reqBody = {
+    template: MOLD,        /* 哪一副模具；空 = 服务端 config.json 里存的那副 */
     nodeId: n.id,          /* 「最近弄懂的」靠它反查节点；以前没发，服务端永远记成空 */
     concept: (isBridge && bKids[0]) ? bKids[0] : n.label,
     topic:   (isBridge && bKids[1]) ? bKids[1] : cl.name,
@@ -2938,7 +3034,7 @@ var RULES = [
   '##CHILD <子概念名> | <它回答的下一个问题> | <关系词> | <一句话为什么值得点进去>',
   '',
   '【硬性规则】',
-  '1. 洞察必须反直觉：##INSIGHT 里必须出现「其实/并不是/并非/反而/恰恰/只有」其中之一。禁止写成定义句。',
+  '1. 洞察必须反直觉：##INSIGHT 里必须出现「其实/并不是/并非/反而/恰恰/只有」其中之一。禁止写成定义句；也不许在 ##INSIGHT 里出现这个概念的名字本身（用「它」代替），否则就是在下定义。',
   '2. 画面必须自足：##SCENE 里不许出现任何专业名词，不许出现其他概念的名字。',
   '3. 公式若写，必须同时给出 ##READ 和至少两个 ##SYM；若这个概念没有合适的公式，就整体省略这三行。',
   '4. 必须写 ##BOUNDS。',
@@ -3535,6 +3631,17 @@ window.addEventListener('load', function(){
   document.getElementById('recentClose').addEventListener('click', function(){ recentModal.classList.remove('on'); });
   recentModal.addEventListener('click', function(e){ if (e.target === recentModal) recentModal.classList.remove('on'); });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && recentModal.classList.contains('on')) recentModal.classList.remove('on'); });
+  /* 模具 */
+  var tplModal = document.getElementById('tplModal');
+  document.getElementById('tplClose').addEventListener('click', function(){ tplModal.classList.remove('on'); });
+  tplModal.addEventListener('click', function(e){ if (e.target === tplModal) tplModal.classList.remove('on'); });
+  document.getElementById('tplOpenDir').addEventListener('click', function(){
+    fetch('/api/templates/open', { method:'POST' })
+      .then(function(r){ return r.json(); })
+      .then(function(j){ if (!j.ok) showToast('打不开文件夹，路径是：' + (j.dir || '未知')); })
+      .catch(function(){ showToast('打不开文件夹'); });
+  });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && tplModal.classList.contains('on')) tplModal.classList.remove('on'); });
   document.querySelectorAll('[data-prov]').forEach(function(b){
     b.addEventListener('click', function(){
       var p = PRESETS[this.dataset.prov];
@@ -3605,7 +3712,12 @@ window.addEventListener('load', function(){
   setTimeout(function(){
     whenMode(function(){
       if (DIRECT){ if (!cfgStore().apiKey) cfgOpen(); return; }
-      if (LIVE){ fetch('/api/health').then(function(r){ return r.json(); }).then(function(j){ if (!j.hasKey) cfgOpen(); }).catch(function(){}); }
+      if (LIVE){
+        fetch('/api/config').then(function(r){ return r.json(); }).then(function(j){
+          if (j && j.template){ MOLD = j.template; MOLD_NAME = j.templateName || '默认'; }
+        }).catch(function(){});
+        fetch('/api/health').then(function(r){ return r.json(); }).then(function(j){ if (!j.hasKey) cfgOpen(); }).catch(function(){});
+      }
     });
   }, 1000);
 

@@ -38,3 +38,13 @@ package-lock.json
 # ── 推送辅助脚本（开发者本机工具，不属于项目本体）──
 push-to-github.js
 
+# 主页发布用的临时工作副本（push-site.ps1）
+.deploy/
+site/
+push-site.js
+push-site.ps1
+
+# ── 浏览器自动化测试留下的用户目录 / 预览快照 ──
+.edge-run/
+preview/
+profile/

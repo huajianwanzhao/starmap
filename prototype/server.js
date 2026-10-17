@@ -102,8 +102,11 @@ function recordGeneration(g) {
   } catch (e) { console.warn('[db] 用量写入失败：' + e.message); }
 }
 
-/* ---------- 生成契约 ---------- */
-const RULES = [
+/* ---------- 生成契约 ----------
+   下面的 PROTOCOL 是**冻结**的协议骨架：13 个标签、行协议、自检会拦的那几条。
+   用户改不到它。能改的只有 templates/*.rules 里那几副「模具」（说人话的方式），
+   模具是追加在协议**后面**的 —— 所以改坏一个模具，最多是讲义难看，解析不会碎。 */
+const PROTOCOL = [
   '你是一个教科书级的解释者，但不预设学科：数学、物理、人文、艺术、工程一样对待。用户在探索一张知识星图，刚点开一个概念，你要写一份极短的讲义。',
   '',
   '【输出格式：行协议，必须严格遵守】',
@@ -122,7 +125,7 @@ const RULES = [
   '##CHILD <子概念名> | <它回答的下一个问题> | <关系词> | <一句话为什么值得点进去>',
   '',
   '【硬性规则】',
-  '1. 洞察必须反直觉：##INSIGHT 里必须出现「其实/并不是/并非/反而/恰恰/只有」其中之一。禁止写成定义句。',
+  '1. 洞察必须反直觉：##INSIGHT 里必须出现「其实/并不是/并非/反而/恰恰/只有」其中之一。禁止写成定义句；也不许在 ##INSIGHT 里出现这个概念的名字本身（用「它」代替），否则就是在下定义。',
   '2. 画面必须自足：##SCENE 里不许出现任何专业名词，不许出现其他概念的名字。',
   '3. 公式若写，必须同时给出 ##READ 和至少两个 ##SYM；若这个概念没有合适的公式，就整体省略这三行。',
   '4. 必须写 ##BOUNDS。',
@@ -135,8 +138,62 @@ const RULES = [
   '关系词只能从这些里选：前置 / 参数 / 上游 / 陷阱 / 变体 / 技巧 / 应用 / 对比 / 延伸'
 ].join('\n');
 
-/* 事实模式的追加规则：不塞进 RULES，因为 RULES 描述的是「原理」那副模具。
-   两个模式各自追加，互不污染；客户端镜像的 RULES 也因此不用改。 */
+/* ---------- 模具：讲义长什么样，是一段文本，不是一个功能 ----------
+   文件格式（templates/*.rules）：
+     开头连续的 # 行 = 说明，会显示在页面的模具列表里
+     第一个不是 # 开头的行之后 = 正文，原样追加到协议后面
+   文件名就是名字（去掉前面的序号），所以「复制一个文件、改掉内容」就是一个新模具。
+   每次请求都重新读盘：改完文件刷新页面就生效，不用重启服务。 */
+const TPL_DIR = path.join(ROOT, 'templates');
+const TPL_DEFAULT = '00-默认';
+function tplParse(raw) {
+  const lines = String(raw || '').split('\n');
+  const desc = [];
+  let i = 0;
+  for (; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (!t) continue;
+    if (t.charAt(0) !== '#' || t.slice(0, 2) === '##') break;   /* ## 是行协议的标签，不是注释 */
+    desc.push(t.replace(/^#+\s*/, ''));
+  }
+  while (i < lines.length && !lines[i].trim()) i++;
+  return { desc: desc.join(' · '), text: lines.slice(i).join('\n').trim() };
+}
+function tplName(id) { return String(id).replace(/^\d+[-_.\s]*/, ''); }
+function listTemplates() {
+  let names = [];
+  try { names = fs.readdirSync(TPL_DIR).filter(function (f) { return /\.rules$/i.test(f); }); } catch (e) { return []; }
+  names.sort();
+  const out = [];
+  for (const f of names) {
+    const id = f.replace(/\.rules$/i, '');
+    let raw = '';
+    try { raw = fs.readFileSync(path.join(TPL_DIR, f), 'utf8'); } catch (e) { continue; }
+    const p = tplParse(raw);
+    out.push({ id: id, name: tplName(id), desc: p.desc, text: p.text });
+  }
+  return out;
+}
+function publicTemplates() {
+  return listTemplates().map(function (t) {
+    return { id: t.id, name: t.name, desc: t.desc, chars: t.text.length,
+             excerpt: t.text.replace(/\s+/g, ' ').slice(0, 120), empty: !t.text };
+  });
+}
+/* 当前该用哪一副：请求里带的 > config.json 里存的 > 默认 */
+function templateBlock(id) {
+  const list = listTemplates();
+  const want = String(id || CFG.template || TPL_DEFAULT);
+  let t = null;
+  for (const x of list) if (x.id === want) t = x;
+  if (!t) for (const x of list) if (x.id === TPL_DEFAULT) t = x;
+  if (!t) return { id: '', name: '', text: '' };   /* 模板目录被删光了：退回纯协议，照常能生成 */
+  return { id: t.id, name: t.name,
+           text: '\n\n【这一次用的模具：' + t.name + '】\n' + t.text };
+}
+
+/* 事实模式的追加规则：不塞进 PROTOCOL，因为 PROTOCOL 描述的是「原理」那副模具。
+   两个模式各自追加，互不污染；客户端直连模式里那份内置 RULES 也因此不用改。 */
 const FACT_ADD = '\n\n【本次追加 · 事实模式】\n用户要的只是一个事实，不是理解。所以：\n' +
   '1. 第一行必须是 ##FACT <直接答案，一句话，不超过 40 字>。不许用 ##COMMON / ##INSIGHT 开场，不许先讲背景再给答案，不许制造悬念。\n' +
   '2. 给完答案之后，最多再写 ##MECH <它为什么会是这样，一到两段>。\n' +
@@ -398,11 +455,14 @@ function maskKey(k) {
   return k.slice(0, 4) + '****' + k.slice(-4);
 }
 function publicConfig() {
-  return { baseUrl: CFG.baseUrl, model: CFG.model, hasKey: !!CFG.apiKey, mask: maskKey(CFG.apiKey) };
+  return { baseUrl: CFG.baseUrl, model: CFG.model, hasKey: !!CFG.apiKey, mask: maskKey(CFG.apiKey),
+           template: CFG.template || TPL_DEFAULT, templateName: tplName(CFG.template || TPL_DEFAULT) };
 }
 function saveConfig(patch) {
   const next = { baseUrl: CFG.baseUrl, apiKey: CFG.apiKey, model: CFG.model, port: CFG.port,
-                 embedModel: CFG.embedModel, embedBaseUrl: CFG.embedBaseUrl, embedApiKey: CFG.embedApiKey };
+                 embedModel: CFG.embedModel, embedBaseUrl: CFG.embedBaseUrl, embedApiKey: CFG.embedApiKey,
+                 template: CFG.template || TPL_DEFAULT };
+  if (typeof patch.template === 'string' && patch.template) next.template = patch.template;
   if (patch.embedModel !== undefined) next.embedModel = String(patch.embedModel || '').trim();
   if (patch.embedBaseUrl !== undefined) next.embedBaseUrl = String(patch.embedBaseUrl || '').trim();
   if (typeof patch.embedApiKey === 'string' && patch.embedApiKey.trim() && patch.embedApiKey.indexOf('*') < 0) next.embedApiKey = patch.embedApiKey.trim();
@@ -511,7 +571,11 @@ async function handleLecture(req, res, isAnswer) {
   /* 不再把服务端全局知道的概念名并进来（原来是 knownNames()）：客户端只送同一星团内的名字。
      以前这里把整张图的概念混成一张「候选菜单」，模型遇到不熟的题目就从菜单里挑词，
      于是输入「奶龙」会硬扯上「期权」「损失函数」这类完全无关的概念。 */
-  const key = (isFact ? 'F|' : isRel ? 'R|' : (isAns ? 'A|' : 'L|')) + concept + '|' + topic + '|' + parent;
+  /* 模具进了缓存键：换模具 = 换一份讲义，不能把旧模具的结果端上来。
+     默认模具不加后缀，这样以前存在 star.db 里的讲义（都是默认模具生成的）还能命中。 */
+  const tpl = isFact ? { id: '', name: '', text: '' } : templateBlock(body.template);
+  const key = (isFact ? 'F|' : isRel ? 'R|' : (isAns ? 'A|' : 'L|')) + concept + '|' + topic + '|' + parent +
+              (tpl.id && tpl.id !== TPL_DEFAULT ? '|M:' + tpl.id : '');
 
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' });
 
@@ -560,13 +624,15 @@ async function handleLecture(req, res, isAnswer) {
        '也不要在正文里重复解释上面这些概念。'].filter(Boolean).join('\n');
 
   const enumQ = !isRel && !isFact && (isEnumQuestion(concept) || isEnumQuestion(topic));
-  const sys = isFact
-    ? RULES + FACT_ADD
-    : isRel
-    ? RULES + '\n\n【本次追加】\n这一节讲的是两个问题之间的关系，不是某一个概念。第一行必须输出 ##TITLE <不超过 12 字的短标题>，概括这两个问题之间是什么关系；然后照常给 ##COMMON / ##SCENE / ##INSIGHT / ##BOUNDS / ##MIS / ##CHILD（子概念给的是「想弄懂这层关系，下一步该点哪个概念」）。'
+  /* 拼装顺序：协议骨架 → 这一次的场合（关系 / 清单）→ 用户选的模具。
+     模具放在最后，是故意的：后说的写法定得更大声，用户改模具才真的改得动讲法。 */
+  const base = isRel
+    ? PROTOCOL + '\n\n【本次追加】\n这一节讲的是两个问题之间的关系，不是某一个概念。第一行必须输出 ##TITLE <不超过 12 字的短标题>，概括这两个问题之间是什么关系；然后照常给 ##COMMON / ##SCENE / ##INSIGHT / ##BOUNDS / ##MIS / ##CHILD（子概念给的是「想弄懂这层关系，下一步该点哪个概念」）。'
     : enumQ
-    ? RULES + '\n\n【本次追加】\n这个问题是清单型问题：请务必用 ##LIST 逐条列出来，一条一行「##LIST <条目> | <一句为什么它值得一提>」，最多 10 行，并且排在 ##SCENE 之前。不要用纠错式开场。'
-    : RULES;
+    ? PROTOCOL + '\n\n【本次追加】\n这个问题是清单型问题：请务必用 ##LIST 逐条列出来，一条一行「##LIST <条目> | <一句为什么它值得一提>」，最多 10 行，并且排在 ##SCENE 之前。不要用纠错式开场。'
+    : PROTOCOL;
+  /* 「我只想知道一个事实」有自己的模具（FACT_ADD），不受这里影响 */
+  const sys = isFact ? PROTOCOL + FACT_ADD : base + tpl.text;
 
   let full = '';
   const sink = {};
@@ -691,6 +757,29 @@ const server = http.createServer(async function (req, res) {
       const b = await readBody(req);
       saveConfig(b);
       return json(res, Object.assign({ ok: true }, publicConfig()));
+    }
+    /* ---------- 模具：讲义长什么样，用户可以改 ---------- */
+    if (u.pathname === '/api/templates' && req.method === 'GET') {
+      return json(res, { dir: TPL_DIR, defaultId: TPL_DEFAULT,
+                         current: CFG.template || TPL_DEFAULT, items: publicTemplates() });
+    }
+    if (u.pathname === '/api/templates' && req.method === 'POST') {
+      const b = await readBody(req);
+      const id = String(b.id || '');
+      const hit = listTemplates().filter(function (t) { return t.id === id; })[0];
+      if (!hit) return json(res, { ok: false, error: '没有这个模具：' + (id || '(空)') }, 400);
+      saveConfig({ template: hit.id });
+      return json(res, Object.assign({ ok: true }, publicConfig()));
+    }
+    /* 一个按钮把模板文件夹打开 —— 「用户能改」的前提是找得到那个文件 */
+    if (u.pathname === '/api/templates/open' && req.method === 'POST') {
+      try {
+        if (!fs.existsSync(TPL_DIR)) fs.mkdirSync(TPL_DIR, { recursive: true });
+        require('child_process').execFile('explorer.exe', [TPL_DIR], function () {});
+        return json(res, { ok: true, dir: TPL_DIR });
+      } catch (e) {
+        return json(res, { ok: false, dir: TPL_DIR, error: String(e.message || e) });
+      }
     }
     if (u.pathname === '/api/test' && req.method === 'POST') {
       if (!CFG.apiKey) return json(res, { ok: false, error: '还没有配置 API Key' });

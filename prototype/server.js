@@ -148,16 +148,21 @@ const TPL_DIR = path.join(ROOT, 'templates');
 const TPL_DEFAULT = '00-默认';
 function tplParse(raw) {
   const lines = String(raw || '').split('\n');
-  const desc = [];
+  const desc = [], ui = {};
   let i = 0;
   for (; i < lines.length; i++) {
     const t = lines[i].trim();
     if (!t) continue;
+    if (t.charAt(0) === '@') {   /* @小节名 = 这副本子里这一节叫什么；只改页面上的小标题，不改行协议 */
+      const eq = t.indexOf('=');
+      if (eq > 1) ui[t.slice(1, eq).trim()] = t.slice(eq + 1).trim();
+      continue;
+    }
     if (t.charAt(0) !== '#' || t.slice(0, 2) === '##') break;   /* ## 是行协议的标签，不是注释 */
     desc.push(t.replace(/^#+\s*/, ''));
   }
   while (i < lines.length && !lines[i].trim()) i++;
-  return { desc: desc.join(' · '), text: lines.slice(i).join('\n').trim() };
+  return { desc: desc.join(' · '), text: lines.slice(i).join('\n').trim(), ui: ui };
 }
 function tplName(id) { return String(id).replace(/^\d+[-_.\s]*/, ''); }
 function listTemplates() {
@@ -170,13 +175,14 @@ function listTemplates() {
     let raw = '';
     try { raw = fs.readFileSync(path.join(TPL_DIR, f), 'utf8'); } catch (e) { continue; }
     const p = tplParse(raw);
-    out.push({ id: id, name: tplName(id), desc: p.desc, text: p.text });
+    out.push({ id: id, name: tplName(id), desc: p.desc, text: p.text, ui: p.ui });
   }
   return out;
 }
 function publicTemplates() {
   return listTemplates().map(function (t) {
     return { id: t.id, name: t.name, desc: t.desc, chars: t.text.length,
+             ui: t.ui || {},
              excerpt: t.text.replace(/\s+/g, ' ').slice(0, 120), empty: !t.text };
   });
 }
@@ -187,8 +193,8 @@ function templateBlock(id) {
   let t = null;
   for (const x of list) if (x.id === want) t = x;
   if (!t) for (const x of list) if (x.id === TPL_DEFAULT) t = x;
-  if (!t) return { id: '', name: '', text: '' };   /* 模板目录被删光了：退回纯协议，照常能生成 */
-  return { id: t.id, name: t.name,
+  if (!t) return { id: '', name: '', text: '', ui: {} };   /* 模板目录被删光了：退回纯协议，照常能生成 */
+  return { id: t.id, name: t.name, ui: t.ui || {},
            text: '\n\n【这一次用的模具：' + t.name + '】\n' + t.text };
 }
 
@@ -455,8 +461,10 @@ function maskKey(k) {
   return k.slice(0, 4) + '****' + k.slice(-4);
 }
 function publicConfig() {
+  const cur = templateBlock(CFG.template || TPL_DEFAULT);
   return { baseUrl: CFG.baseUrl, model: CFG.model, hasKey: !!CFG.apiKey, mask: maskKey(CFG.apiKey),
-           template: CFG.template || TPL_DEFAULT, templateName: tplName(CFG.template || TPL_DEFAULT) };
+           template: cur.id || CFG.template || TPL_DEFAULT, templateName: tplName(cur.id || CFG.template || TPL_DEFAULT),
+           templateUi: cur.ui || {} };
 }
 function saveConfig(patch) {
   const next = { baseUrl: CFG.baseUrl, apiKey: CFG.apiKey, model: CFG.model, port: CFG.port,

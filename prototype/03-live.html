@@ -208,6 +208,12 @@
   .insight .isk{display:block;font-size:13.5px;color:#828fa8;margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed rgba(255,255,255,.1)}
   .sec{margin:0 0 24px}
   .sech{font-size:10.5px;letter-spacing:.22em;color:#5b6479;margin:0 0 12px}
+.moldtag{font-size:10.5px;letter-spacing:.18em;color:#6f7f9e;margin:0 0 18px;padding:4px 10px;display:inline-block;border:1px solid rgba(138,164,255,.28);border-radius:999px;background:rgba(138,164,255,.07)}
+.dpair{display:grid;grid-template-columns:1fr;gap:8px;margin:0 0 14px}
+.dpair>div{font-size:14.5px;line-height:1.85;padding:9px 12px;border-radius:9px}
+.dpbad{background:rgba(232,94,94,.09);border-left:3px solid rgba(232,94,94,.55);color:#d9b0b0}
+.dpok{background:rgba(94,200,146,.09);border-left:3px solid rgba(94,200,146,.5);color:#b4d9c2}
+@media(min-width:760px){.dpair{grid-template-columns:1fr 1fr;gap:10px}}
   .lstset{list-style:none;margin:0;padding:0}
   .lstset li{padding:9px 0;border-bottom:1px dashed rgba(255,255,255,.09);font-size:14.5px;line-height:1.6}
   .lstset li:last-child{border-bottom:0}
@@ -659,6 +665,7 @@ var LIVE = false;     /* 本地服务模式：Key 由服务端的 config.json �
 var DIRECT = false;   /* 直连模式：双击打开时启用，Key 存在本机浏览器里 */
 var MOLD = '';        /* 当前模具 id：空 = 服务端 config.json 里存的那副（直连模式恒为空，用内置的） */
 var MOLD_NAME = '默认';
+var MOLD_UI = {};     /* 这副模具把每一节叫什么：mode 文件里的 @scene / @mech / @bounds … */
 var modeReady;
 try {
   modeReady = fetch('/api/health').then(function(r){ return r.json(); })
@@ -1510,6 +1517,7 @@ function openNode(id, push){
   var cl = CLUSTERS[n.cluster];
   if ((LIVE || DIRECT) && !LECTURES[n.id]){ renderLive(n, cl); autoLanes(); refreshVisibility(); if (panelTab === 'cards') showCards(); return; }
   var ct = LECTURES[n.id] || contentOf(n.label, cl.name);
+  var CU = ct.ui || {};
   var crumb = [], cur = n;
   while (cur){ crumb.unshift(shortLabel(cur.label, 14)); cur = cur.parentId ? NODES[cur.parentId] : null; }
   crumbEl.textContent = crumb.join('  ›  ');
@@ -1532,18 +1540,19 @@ function openNode(id, push){
     html += '<p class="aliasline">你也可以这样问它：' + cl.aliases.join('　·　') + '</p>';
   }
   html += '<div class="lecture">';
+  if (ct.moldName && ct.moldName !== '默认') html += '<div class="moldtag">这一份用：' + ct.moldName + '</div>';
   if (ct.insight){
-    html += '<div class="rv insight"><b>一句话洞察</b>'
+    html += '<div class="rv insight"><b>' + uiTitle(CU, 'insighthead', '一句话洞察') + '</b>'
           + (ct.common ? '<span class="isk">' + renderLecture(ct.common) + '</span>' : '')
           + renderLecture(ct.insight) + '</div>';
     if (ct.list && ct.list.length){
-      html += '<div class="sec rv lstsec"><div class="sech">清单</div><ul class="lstset">';
+      html += '<div class="sec rv lstsec"><div class="sech">' + uiTitle(CU, 'list', '清单') + '</div><ul class="lstset">';
       for (var li2=0; li2<ct.list.length; li2++) html += '<li><b>' + renderLecture(ct.list[li2].item) + '</b>' + (ct.list[li2].why ? '<span class="lstwhy">' + renderLecture(ct.list[li2].why) + '</span>' : '') + '</li>';
       html += '</ul></div>';
     }
-    if (ct.scene) html += '<div class="sec rv"><div class="sech">画面</div><p>' + renderLecture(ct.scene) + '</p></div>';
+    if (ct.scene) html += '<div class="sec rv"><div class="sech">' + uiTitle(CU, 'scene', '画面') + '</div><p>' + renderLecture(ct.scene) + '</p></div>';
     if (ct.mechanism){
-      html += '<div class="sec rv"><div class="sech">它是怎么工作的</div>';
+      html += '<div class="sec rv"><div class="sech">' + uiTitle(CU, 'mech', '它是怎么工作的') + '</div>';
       for (var m=0;m<ct.mechanism.length;m++) html += '<p>' + renderLecture(ct.mechanism[m]) + '</p>';
       html += '</div>';
     }
@@ -1555,9 +1564,9 @@ function openNode(id, push){
       if (ct.formula.example) html += '<div class="fex">' + ct.formula.example + '</div>';
       html += '</div>';
     }
-    if (ct.bounds) html += '<div class="sec rv"><div class="sech">它在什么时候失效</div><p>' + renderLecture(ct.bounds) + '</p></div>';
+    if (ct.bounds) html += '<div class="sec rv"><div class="sech">' + uiTitle(CU, 'bounds', '它在什么时候失效') + '</div><p>' + renderLecture(ct.bounds) + '</p></div>';
     if (ct.misconceptions){
-      html += '<div class="sec rv"><div class="sech">常见误解</div>';
+      html += '<div class="sec rv"><div class="sech">' + uiTitle(CU, 'mis', '常见误解') + '</div>';
       for (var mi=0;mi<ct.misconceptions.length;mi++) html += '<p>' + renderLecture(ct.misconceptions[mi]) + '</p>';
       html += '</div>';
     }
@@ -1926,11 +1935,13 @@ function nodeMd(n){
 
   if (L){
     if (L.fact){ o.push('## 答案是'); o.push(''); o.push('**' + L.fact + '**'); o.push(''); }
-    if (L.common){ o.push('## 大多数人以为'); o.push(''); o.push(L.common); o.push(''); }
-    if (L.insight){ o.push('## 其实'); o.push(''); o.push(L.insight); o.push(''); }
-    if (L.scene){ o.push('## 一个画面'); o.push(''); o.push(L.scene); o.push(''); }
+    var LU = L.ui || {};
+    if (L.moldName && L.moldName !== '默认'){ o.push('*这一份用：' + L.moldName + '*'); o.push(''); }
+    if (L.common){ o.push('## ' + uiTitle(LU, 'common', '大多数人以为')); o.push(''); o.push(L.common); o.push(''); }
+    if (L.insight){ o.push('## ' + uiTitle(LU, 'insight', '其实')); o.push(''); o.push(L.insight); o.push(''); }
+    if (L.scene){ o.push('## ' + uiTitle(LU, 'scene', '一个画面')); o.push(''); o.push(L.scene); o.push(''); }
     if (L.list && L.list.length){
-      o.push('## 清单'); o.push('');
+      o.push('## ' + uiTitle(LU, 'list', '清单')); o.push('');
       for (i = 0; i < L.list.length; i++){
         var it = L.list[i];
         if (typeof it === 'string') o.push('- ' + it);
@@ -1939,7 +1950,7 @@ function nodeMd(n){
       o.push('');
     }
     if (L.mechanism && L.mechanism.length){
-      o.push('## 它是怎么工作的'); o.push('');
+      o.push('## ' + uiTitle(LU, 'mech', '它是怎么工作的')); o.push('');
       for (i = 0; i < L.mechanism.length; i++){ o.push(L.mechanism[i]); o.push(''); }
     }
     if (L.formula){
@@ -1951,9 +1962,9 @@ function nodeMd(n){
         o.push('');
       }
     }
-    if (L.bounds){ o.push('## 它在什么时候失效'); o.push(''); o.push(L.bounds); o.push(''); }
+    if (L.bounds){ o.push('## ' + uiTitle(LU, 'bounds', '它在什么时候失效')); o.push(''); o.push(L.bounds); o.push(''); }
     if (L.misconceptions && L.misconceptions.length){
-      o.push('## 常见误解'); o.push('');
+      o.push('## ' + uiTitle(LU, 'mis', '常见误解')); o.push('');
       for (i = 0; i < L.misconceptions.length; i++) o.push('- ' + L.misconceptions[i]);
       o.push('');
     }
@@ -2259,6 +2270,7 @@ function pickTpl(id){
       if (!j.ok){ showToast(j.error || '换不了这个模具'); return; }
       MOLD = j.template || '';
       MOLD_NAME = j.templateName || '默认';
+      MOLD_UI = j.templateUi || {};
       LECTURES = {};                     /* 换模具 = 换一种讲法，前端存的旧讲义不能再用 */
       showToast('模具换成「' + MOLD_NAME + '」· 重新点开节点就是新讲法');
       openTpl();
@@ -2737,6 +2749,12 @@ function paintTex(el, tex){
   el.style.fontFamily = 'ui-monospace,Consolas,monospace';
   el.style.fontSize = '16px';
 }
+/* 模具可以给每一节起自己的名字（模板文件里的 @scene / @mech / @bounds …）。没写就用默认的。 */
+function uiTitle(ui, key, fallback){
+  var v = ui && ui[key];
+  return (typeof v === 'string' && v) ? v : fallback;
+}
+function secTitle(key, fallback){ return uiTitle(MOLD_UI, key, fallback); }
 function liveSec(box, state, key, title){
   if (state[key]) return state[key];
   var d = document.createElement('div'); d.className = 'sec';
@@ -2744,12 +2762,20 @@ function liveSec(box, state, key, title){
   d.appendChild(h); box.appendChild(d); state[key] = d; return d;
 }
 function livePara(parent, text){
+  /* 对照体模具每一段都是「❌ … ／ ✅ …」；把它排成两栏，别让两种说法混在一行里 */
+  var m = /^❌\s*([\s\S]+?)\s*[／\/]\s*✅\s*([\s\S]+)$/.exec(text);
+  if (m){
+    var row = document.createElement('div'); row.className = 'dpair';
+    var bad = document.createElement('div'); bad.className = 'dpbad'; bad.textContent = '❌ ' + m[1];
+    var ok = document.createElement('div'); ok.className = 'dpok'; ok.textContent = '✅ ' + m[2];
+    row.appendChild(bad); row.appendChild(ok); parent.appendChild(row); return;
+  }
   var p = document.createElement('p'); p.textContent = text; parent.appendChild(p);
 }
 function liveList(box, state){
   if (state.listEl) return state.listEl;
   var d = document.createElement('div'); d.className = 'sec lstsec';
-  var h = document.createElement('div'); h.className = 'sech'; h.textContent = '清单';
+  var h = document.createElement('div'); h.className = 'sech'; h.textContent = secTitle('list', '清单');
   var ul = document.createElement('ul'); ul.className = 'lstset';
   d.appendChild(h); d.appendChild(ul);
   /* 清单必须排在「画面」上面 */
@@ -2761,7 +2787,7 @@ function liveList(box, state){
 function liveInsight(box, state){
   if (state.insightEl) return;
   var d = document.createElement('div'); d.className = 'insight';
-  var b = document.createElement('b'); b.textContent = '一句话洞察'; d.appendChild(b);
+  var b = document.createElement('b'); b.textContent = secTitle('insighthead', '一句话洞察'); d.appendChild(b);
   state.commonEl = document.createElement('span'); state.commonEl.className = 'isk'; d.appendChild(state.commonEl);
   state.insightEl = document.createElement('span'); d.appendChild(state.insightEl);
   box.appendChild(d);
@@ -2790,8 +2816,8 @@ function handleLiveLine(state, line){
   if (tag === 'COMMON'){ liveInsight(box, state); state.commonEl.textContent = rest; d.common = rest; }
   else if (tag === 'INSIGHT'){ liveInsight(box, state); state.insightEl.textContent = rest; d.insight = rest; }
   else if (tag === 'FACT'){ liveFact(box, state).textContent = rest; d.fact = rest; }
-  else if (tag === 'SCENE'){ livePara(liveSec(box, state, 'secScene', '画面'), rest); d.scene.push(rest); }
-  else if (tag === 'MECH'){ livePara(liveSec(box, state, 'secMech', '它是怎么工作的'), rest); d.mech.push(rest); }
+  else if (tag === 'SCENE'){ livePara(liveSec(box, state, 'secScene', secTitle('scene', '画面')), rest); d.scene.push(rest); }
+  else if (tag === 'MECH'){ livePara(liveSec(box, state, 'secMech', secTitle('mech', '它是怎么工作的')), rest); d.mech.push(rest); }
   else if (tag === 'FORMULA'){ var fb = liveFbox(box, state); fb.tex.setAttribute('data-tex', rest); paintTex(fb.tex, rest); d.formula = { tex: rest, read: '', symbols: [] }; }
   else if (tag === 'READ'){
     if (state.fbox && d.formula){
@@ -2813,8 +2839,8 @@ function handleLiveLine(state, line){
       state.fbox.el.appendChild(s);
     }
   }
-  else if (tag === 'BOUNDS'){ livePara(liveSec(box, state, 'secBounds', '它在什么时候失效'), rest); d.bounds.push(rest); }
-  else if (tag === 'MIS'){ livePara(liveSec(box, state, 'secMis', '常见误解'), rest); d.mis.push(rest); }
+  else if (tag === 'BOUNDS'){ livePara(liveSec(box, state, 'secBounds', secTitle('bounds', '它在什么时候失效')), rest); d.bounds.push(rest); }
+  else if (tag === 'MIS'){ livePara(liveSec(box, state, 'secMis', secTitle('mis', '常见误解')), rest); d.mis.push(rest); }
   else if (tag === 'LIST'){
     var lq = rest.split('|');
     var item = (lq[0] || '').trim(), why = (lq[1] || '').trim();
@@ -2867,6 +2893,8 @@ function finishLive(n, state, cl){
   if (rb) rb.classList.remove('spin');
   var d = state.data;
   LECTURES[n.id] = {
+    ui: Object.assign({}, MOLD_UI),     /* 这份讲义自己的小节名：换回旧讲义时版式不会跟着当前模具漂移 */
+    moldName: MOLD_NAME,
     s: d.fact || (d.scene.length ? d.scene[0] : ''),
     fact: d.fact,
     common: d.common, insight: d.insight,
@@ -2943,6 +2971,11 @@ function renderLive(n, cl, bust){
   var h2 = document.createElement('h2'); h2.textContent = n.label; pbody.appendChild(h2);
 
   var box = document.createElement('div'); box.className = 'lecture'; pbody.appendChild(box);
+  if (MOLD_NAME && MOLD_NAME !== '默认'){
+    var mt = document.createElement('div'); mt.className = 'moldtag';
+    mt.textContent = '这一份用：' + MOLD_NAME;
+    box.appendChild(mt);
+  }
   var tip = document.createElement('p'); tip.className = 'lanenote'; tip.textContent = '正在生成…';
   box.appendChild(tip);
 
@@ -3714,7 +3747,7 @@ window.addEventListener('load', function(){
       if (DIRECT){ if (!cfgStore().apiKey) cfgOpen(); return; }
       if (LIVE){
         fetch('/api/config').then(function(r){ return r.json(); }).then(function(j){
-          if (j && j.template){ MOLD = j.template; MOLD_NAME = j.templateName || '默认'; }
+          if (j && j.template){ MOLD = j.template; MOLD_NAME = j.templateName || '默认'; MOLD_UI = j.templateUi || {}; }
         }).catch(function(){});
         fetch('/api/health').then(function(r){ return r.json(); }).then(function(j){ if (!j.hasKey) cfgOpen(); }).catch(function(){});
       }
